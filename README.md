@@ -1,1 +1,4 @@
-# 0110101101011101010111010101
+## Contributing  
+David Wang  
+Shoshana Malfatto  
+Sam Ingram  
