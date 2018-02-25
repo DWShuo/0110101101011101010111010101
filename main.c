@@ -181,7 +181,6 @@ void parseline(char* buffer, int size, process_t *processes, int *n) {
 		return;
 	}
 	int count = 1;
-	int arrival_time;
 	char num_buf[10];
 	proc.id = buffer[0];
 	int i = 2;
@@ -217,7 +216,7 @@ void parseline(char* buffer, int size, process_t *processes, int *n) {
 		count++;
 		i++;
 	}
-	event_t *event = create_event(EVENT_PROCESS_ARRIVAL, arrival_time, &proc);
+	event_t *event = create_event(EVENT_PROCESS_ARRIVAL, proc.init_arrival_time, &proc);
 	event_push(event);
 }
 
@@ -320,7 +319,6 @@ void add_readyq(heapq_t *blockedq, int32_t elapsed_time) {
 
 void fcfs(process_t *processes, int *n) {
 	heapq_t blockedq[1];
-
 	heap_init(readyq, cmp_fcfs);
 	// I/O
 	heap_init(blockedq, cmp_fcfs); // except based on something else... I/O time
