@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include "heapq.h"
 
 #define MAXLINE 100
@@ -74,7 +74,6 @@ int32_t preemptions;
 //COMPARISON FUNCTIONS
 int cmp_fcfs(void *_p1, void *_p2);
 int cmp_srt(void *_p1, void *_p2);
-int cmp_rr(void *_p1, void *_p2);
 
 
 //NOTE: HEAP HELPER FUNCTIONS
@@ -139,9 +138,9 @@ void add_to_readyq(process_t *proc, char *reason) {//printing
 void parseline( char* buffer, int size, process_t *processes, int *n);
 process_t *parse(char *filename, process_t *processes, int *n);
 void preempt_srt(process_t *new_proc);
-void fcfs();
-void srt();
-void rr();
+void fcfs(process_t *process_t, int *n);
+void srt(process_t *processes, int *n);
+void rr(process_t *processes, int *n);
 
 
 int main(int argc, char **argv){
@@ -168,11 +167,7 @@ int main(int argc, char **argv){
 
 	parse(argv[1], processes, &n); /* store processes from file in array */
 
-	fcfs();
-
-	srt();
-
-	rr();
+	fcfs(processes, &n);
 
 	return 0;
 }
@@ -181,16 +176,14 @@ int main(int argc, char **argv){
 void parseline( char* buffer, int size, process_t *processes, int *n) {
 	process_t proc;
 	printf("%c\n", buffer[0]);
-	if(buffer[0] == '#')
-	{
+	if(buffer[0] == '#') {
 		return;
 	}
 	int count = 1;
 	char num_buf[10];
 	proc.id = buffer[0];
 	int i = 2;
-	while(count < 5)
-	{
+	while(count < 5) {
 		int j = 0;
 		while(isalnum(buffer[i]))
 		{
@@ -201,6 +194,7 @@ void parseline( char* buffer, int size, process_t *processes, int *n) {
 		num_buf[j] = '\0';
 		if(count == 1) {
 			proc.init_arrival_time = atoi(num_buf);
+			proc.start_time = proc.init_arrival_time;
 			printf("arrival time: %d\n", proc.init_arrival_time);
 		}
 		else if(count == 2) {
@@ -251,9 +245,9 @@ int cmp_fcfs(void *_p1, void *_p2) {
 	process_t *p1 = (process_t *)_p1;
 	process_t *p2 = (process_t *)_p2;
 	// compare cpu burst arrival time
-	if (p1->time_slice->time < p2->time_slice->time)
+	if (p1->start_time < p2->start_time)
 		return -1;
-	else if (p1->time_slice->time == p2->time_slice->time)
+	else if (p1->start_time == p2->start_time)
 		return 0;
 	else
 		return 1;
@@ -273,12 +267,6 @@ int cmp_srt(void *_p1, void *_p2) {
 }
 
 
-int cmp_rr(void *_p1, void *_p2) {
-	// compare arrival time... but we also need to divide bursts
-	return 0;
-}
-
-
 // check if newly arrived process has less remaining time than current process
 // switch out current process w/ new, put current in ready queue
 // skips adding new_proc to ready queue
@@ -295,17 +283,52 @@ void preempt_rr() {
 }
 
 
-void fcfs() {
+void init_readyq(process_t *processes, int *n, int32_t elapsed_time) {
+	for (int i = 0; i < *n; ++i) {
+		if (processes[i].start_time == elapsed_time) { // shouldn't be init_arrival_time
+			heap_push(readyq, processes+i);
+		}
+	}
+}
+
+
+void add_readyq(heapq_t *blockedq, int32_t elapsed_time) {
+	// peek and see if start time <= elapsed_time
+	while (blockedq->length > 0 && blockedq->elements[0].start_time <= elapsed_time) {
+		heap_push(readyq, heap_pop(blockedq));
+	}
+}
+
+
+// if blocked is a queue/heap, then I want the 
+
+void fcfs(process_t *processes, int *n) {
+	heapq_t *blockedq;
+
+	heap_init(readyq, cmp_fcfs);
+	// I/O
+	heap_init(blockedq, cmp_fcfs); // except based on something else... I/O time
+
+	int32_t elapsed_time = 0;
+	init_readyq(processes, n, elapsed_time);
+	// while readyq? is empty
+		// check for arrival time >= current_time and add to ready queue
+		// wait for time of first cpu burst
+	while (readyq->length > 0) {
+		current_process = heap_pop(readyq);
+		elapsed_time += t_cs; // probably shouldn't add time at the end
+		elapsed_time += current_process->cpu_burst_time;
+		// check if I can take from blocked
+	}
+}
+
+
+void srt(process_t *processes, int *n) {
 
 }
 
 
-void srt() {
-
-}
-
-
-void rr() {
+void rr(process_t *processes, int *n) {
 
 }
 
