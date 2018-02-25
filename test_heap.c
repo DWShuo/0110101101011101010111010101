@@ -36,7 +36,12 @@ void test_int() {
 }
 
 void test_struct() {
+	struct Item {
+		char name[10];
+		int price;
+	};
 
+	// struct Item item = {"banana", 2}
 }
 
 int main() {
