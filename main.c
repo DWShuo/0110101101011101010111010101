@@ -9,7 +9,6 @@
 #define MAXLINE 100
 
 //EVENT AND PROCESS STRUCTS
-
 char *schedular_name[3] = {"FCFS", "SRT", "RR"}
 
 typedef enum{
@@ -51,7 +50,7 @@ typedef struct _event_t event_t;
 //COMPARISON FUCNTIONS
 
 
-
+//SIMULATOR AND STATISTIC VARIABLES
 // simulator global variables and parameters
 int32_t current_time = 0;
 process_t *current_process = NULL;
@@ -70,8 +69,8 @@ int32_t turnaround_count;
 int32_t context_switches;
 int32_t preemptions;
 
+//HEAP OPERATIONS
 
-//HEAP operations
 
 void print_usage(char *cmd) {
 	fprintf(stderr, "USAGE: %s <input-file> <stats-output-file> [<rr-add>]", cmd);
