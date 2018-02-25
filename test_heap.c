@@ -18,7 +18,6 @@ int cmp_int(void *_p1, void *_p2) {
 
 void test_int() {
 	heapq_t h;
-	// int (*cmp_ptr)(void*, void*) = &cmp;
 	int32_t popped;
 	int32_t tmp;
 	heap_init(&h, cmp_int);

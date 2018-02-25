@@ -9,7 +9,7 @@
 #define MAXLINE 100
 
 //EVENT AND PROCESS STRUCTS
-char *schedular_name[3] = {"FCFS", "SRT", "RR"}
+char *schedular_name[3] = {"FCFS", "SRT", "RR"};
 
 typedef enum{
     FCFS = 0,
