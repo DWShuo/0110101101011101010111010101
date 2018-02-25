@@ -1,7 +1,6 @@
 #include <assert.h>
 #include "heapq.h"
 
-
 static void siftdown(heapq_t *heap, int startpos, int pos) {
 	void *newitem = heap->elements[pos];
 	while (pos > startpos) {
