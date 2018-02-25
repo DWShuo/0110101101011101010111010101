@@ -56,6 +56,66 @@ int cmp_srt(void *_p1, void *_p2);
 int cmp_rr(void *_p1, void *_p2);
 
 
+
+
+//NOTE: HEAP HELPER FUNCTIONS
+//EVENT HELPERS
+event_t *create_event(event_type type, int32_t time, process_t *proc) {
+	event_t *event = (event_t *)calloc(sizeof(event_t), 1);
+	event->type = type;
+	event->time = time;
+	event->process = proc;
+	return event;
+}
+void event_push(event_t *event) {
+	heap_push(eventq, event);
+}
+event_t *event_pop() {
+	return eventq->length > 0 ? (event_t *)heap_pop(eventq) : NULL;
+}
+event_t *event_peek() {
+	return eventq->length > 0 ? (event_t *)eventq->elements[0] : NULL;
+}
+
+//READY Q HELPERS
+void ready_push(process_t *proc, int beginning) {
+	// for rr_add = 1, use a negative enqueue time so this process is placed on front
+	proc->enqueue_time = beginning ? -current_time : current_time;
+	total_wait_time -= current_time;
+	wait_count++;
+	heap_push(readyq, proc);
+}
+process_t *ready_pop() {
+	if (readyq->length > 0) {
+		process_t *proc = (process_t *)heap_pop(readyq);
+		total_wait_time += current_time;
+		return proc;
+	} else {
+		return NULL;
+	}
+}
+process_t *ready_peek() {
+	return readyq->length > 0 ? (process_t *)readyq->elements[0] : NULL;
+}
+void dump_readyq() {
+	printf("[Q");
+	if (readyq->length == 0) {
+		printf(" <empty>]\n");
+	} else {
+		heapq_t heap[1];
+		memcpy(heap, readyq, sizeof(heapq_t));
+		while (heap->length > 0) {
+			printf(" %s", ((process_t *)heap_pop(heap))->name);
+		}
+		printf("]\n");
+	}
+}
+void add_to_readyq(process_t *proc, char *reason) {//printing 
+	ready_push(proc, rr_add);
+	printf("time %dms: Process %s %s added to ready queue ", current_time, proc->name, reason);
+	dump_readyq();
+}
+
 //SIMULATOR AND STATISTIC VARIABLES
 // simulator global variables and parameters
 int32_t current_time = 0;
