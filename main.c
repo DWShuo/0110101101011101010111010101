@@ -10,6 +10,7 @@
 #include "heapq.h"
 
 #define MAXLINE 100
+#define MAXSIZE 26
 
 //EVENT AND PROCESS STRUCTS
 char *scheduler_name[3] = {"FCFS", "SRT", "RR"};
@@ -22,7 +23,8 @@ typedef enum{
 
 struct _event_t;
 typedef struct {
-	char name;    			 //   ]
+	char id;    			 //   ]
+	int32_t init_arrival_time;//  ] same thing as enqueue time?
 	int32_t cpu_burst_time;  //   ]-- from the input file
 	int32_t cpu_burst_count; //   ]
 	int32_t io_burst_time;   //   ]
@@ -50,12 +52,29 @@ struct _event_t {
 };
 typedef struct _event_t event_t;
 
+//SIMULATOR AND STATISTIC VARIABLES
+// simulator global variables and parameters
+int32_t current_time = 0;
+process_t *current_process = NULL;
+heapq_t eventq[1];
+heapq_t readyq[1];
+int rr_add = 0;
+int t_cs = 8;
+int t_slice = 80;
+// statistics
+int32_t total_burst_time;
+int32_t burst_count;
+int32_t total_wait_time;
+int32_t wait_count;
+int32_t total_turnaround_time;
+int32_t turnaround_count;
+int32_t context_switches;
+int32_t preemptions;
+
 //COMPARISON FUNCTIONS
 int cmp_fcfs(void *_p1, void *_p2);
 int cmp_srt(void *_p1, void *_p2);
 int cmp_rr(void *_p1, void *_p2);
-
-
 
 
 //NOTE: HEAP HELPER FUNCTIONS
@@ -105,39 +124,20 @@ void dump_readyq() {
 		heapq_t heap[1];
 		memcpy(heap, readyq, sizeof(heapq_t));
 		while (heap->length > 0) {
-			printf(" %s", ((process_t *)heap_pop(heap))->name);
+			printf(" %c", ((process_t *)heap_pop(heap))->id);
 		}
 		printf("]\n");
 	}
 }
 void add_to_readyq(process_t *proc, char *reason) {//printing 
 	ready_push(proc, rr_add);
-	printf("time %dms: Process %s %s added to ready queue ", current_time, proc->name, reason);
+	printf("time %dms: Process %c %s added to ready queue ", current_time, proc->id, reason);
 	dump_readyq();
 }
 
-//SIMULATOR AND STATISTIC VARIABLES
-// simulator global variables and parameters
-int32_t current_time = 0;
-process_t *current_process = NULL;
-heapq_t eventq[1];
-heapq_t readyq[1];
-int rr_add = 0;
-int t_cs = 8;
-int t_slice = 80;
-// statistics
-int32_t total_burst_time;
-int32_t burst_count;
-int32_t total_wait_time;
-int32_t wait_count;
-int32_t total_turnaround_time;
-int32_t turnaround_count;
-int32_t context_switches;
-int32_t preemptions;
 
-
-void parseline( char* buffer, int size);
-void parse(char *filename);
+void parseline( char* buffer, int size, process_t *processes, int *n);
+process_t *parse(char *filename, process_t *processes, int *n);
 void preempt_srt(process_t *new_proc);
 void fcfs();
 void srt();
@@ -145,6 +145,9 @@ void rr();
 
 
 int main(int argc, char **argv){
+
+	process_t processes[MAXSIZE]; /* Array of all processes */
+	int n = 0; /* number of processes to simulate */
 
     if (argc != 3 && argc != 4) {
     	fprintf(stderr, "ERROR: Invalid arguments\n");
@@ -163,7 +166,7 @@ int main(int argc, char **argv){
 		return EXIT_FAILURE;
 	}
 
-	parse(argv[1]);
+	parse(argv[1], processes, &n); /* store processes from file in array */
 
 	fcfs();
 
@@ -175,21 +178,16 @@ int main(int argc, char **argv){
 }
 
 
-void parseline( char* buffer, int size)
-{
+void parseline( char* buffer, int size, process_t *processes, int *n) {
+	process_t proc;
 	printf("%c\n", buffer[0]);
 	if(buffer[0] == '#')
 	{
 		return;
 	}
 	int count = 1;
-	char proc_id;
-	int arrival_time;
-	int burst_time;
-	int num_bursts;
-	int io_time;
 	char num_buf[10];
-	proc_id = buffer[0];
+	proc.id = buffer[0];
 	int i = 2;
 	while(count < 5)
 	{
@@ -201,36 +199,34 @@ void parseline( char* buffer, int size)
 			i++;
 		}
 		num_buf[j] = '\0';
-		if(count == 1)
-		{
-			arrival_time = atoi(num_buf);
-			printf("%d\n", arrival_time);
+		if(count == 1) {
+			proc.init_arrival_time = atoi(num_buf);
+			printf("arrival time: %d\n", proc.init_arrival_time);
 		}
-		else if(count == 2)
-		{
-			burst_time = atoi(num_buf);
-			printf( "%d\n", burst_time);
+		else if(count == 2) {
+			proc.cpu_burst_time = atoi(num_buf);
+			printf( "cpu burst time: %d\n", proc.cpu_burst_time);
 		}
-		else if(count == 3)
-		{
-			num_bursts = atoi(num_buf);
-			printf("%d\n", num_bursts);
+		else if(count == 3) {
+			proc.cpu_burst_count = atoi(num_buf);
+			printf("num cpu bursts: %d\n", proc.cpu_burst_count);
 		}
-		else if(count == 4)
-		{
-			io_time = atoi(num_buf);
-			printf("%d\n", io_time);
+		else if(count == 4) {
+			proc.io_burst_time = atoi(num_buf);
+			printf("io burst time: %d\n", proc.io_burst_time);
 		}
 		count++;
 		i++;
 	}
+	// now add process to processes array
+	processes[*n] = proc;
+	*n += 1;
 }
 
 
-void parse(char *filename) {
+process_t *parse(char *filename, process_t *processes, int *n) {
 	FILE* file = fopen(filename, "r");
-	if(file == NULL)
-	{
+	if(file == NULL) {
 		fprintf(stderr, "ERROR: fopen failed\n");
 		exit(EXIT_FAILURE);
 	}
@@ -239,16 +235,15 @@ void parse(char *filename) {
 	//buffer = (char*)malloc(50*sizeof(char));
 	int bytes_read = getline(&buffer, &size, file);
 	//printf("%s : bytes_read = %d\n", buffer, bytes_read);
-	while(bytes_read != -1)
-	{
-		parseline(buffer, bytes_read);
+	while(bytes_read != -1) {
+		parseline(buffer, bytes_read, processes, n);
 		bytes_read = getline(&buffer, &size, file);
 	}
-	if(bytes_read == -1)
-	{
+	if(bytes_read == -1) {
 		free( buffer );
 		fclose( file );
 	}
+	return processes;
 }
 
 
