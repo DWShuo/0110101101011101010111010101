@@ -24,6 +24,14 @@ int main(int argc, char **argv){
 		return EXIT_FAILURE;
 	}
 
+	heapq_t h;
+	int (*cmp_ptr)(void*, void*) = &cmp;
+	heap_init(&h, cmp_ptr);
 
-return 0;
+	int item = 4;
+	heap_push(&h, &item);
+	int *popped = heap_pop(&h);
+	printf("%d\n", *popped);
+
+	return 0;
 }
