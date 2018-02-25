@@ -74,6 +74,7 @@ int32_t preemptions;
 //COMPARISON FUNCTIONS
 int cmp_fcfs(void *_p1, void *_p2);
 int cmp_srt(void *_p1, void *_p2);
+int cmp_event_time(void *_p1, void *_p2);
 
 
 //NOTE: HEAP HELPER FUNCTIONS
@@ -173,13 +174,14 @@ int main(int argc, char **argv){
 }
 
 
-void parseline( char* buffer, int size, process_t *processes, int *n) {
+void parseline(char* buffer, int size, process_t *processes, int *n) {
 	process_t proc;
 	printf("%c\n", buffer[0]);
 	if(buffer[0] == '#') {
 		return;
 	}
 	int count = 1;
+	int arrival_time;
 	char num_buf[10];
 	proc.id = buffer[0];
 	int i = 2;
@@ -197,46 +199,53 @@ void parseline( char* buffer, int size, process_t *processes, int *n) {
 			proc.start_time = proc.init_arrival_time;
 			printf("arrival time: %d\n", proc.init_arrival_time);
 		}
-		else if(count == 2) {
+		else if(count == 2)
+		{
 			proc.cpu_burst_time = atoi(num_buf);
-			printf( "cpu burst time: %d\n", proc.cpu_burst_time);
+			printf( "%d\n", proc.cpu_burst_time);
 		}
-		else if(count == 3) {
+		else if(count == 3)
+		{
 			proc.cpu_burst_count = atoi(num_buf);
-			printf("num cpu bursts: %d\n", proc.cpu_burst_count);
+			printf("%d\n", proc.cpu_burst_count);
 		}
-		else if(count == 4) {
+		else if(count == 4)
+		{
 			proc.io_burst_time = atoi(num_buf);
-			printf("io burst time: %d\n", proc.io_burst_time);
+			printf("%d\n", proc.io_burst_time);
 		}
 		count++;
 		i++;
 	}
-	// now add process to processes array
-	processes[*n] = proc;
-	*n += 1;
+	event_t *event = create_event(EVENT_PROCESS_ARRIVAL, arrival_time, &proc);
+	event_push(event);
 }
 
 
 process_t *parse(char *filename, process_t *processes, int *n) {
 	FILE* file = fopen(filename, "r");
-	if(file == NULL) {
+	if(file == NULL)
+	{
 		fprintf(stderr, "ERROR: fopen failed\n");
 		exit(EXIT_FAILURE);
 	}
+    heap_init(eventq, cmp_event_time);
 	char *buffer = NULL;
 	size_t size = 0;
 	//buffer = (char*)malloc(50*sizeof(char));
 	int bytes_read = getline(&buffer, &size, file);
 	//printf("%s : bytes_read = %d\n", buffer, bytes_read);
-	while(bytes_read != -1) {
+	while(bytes_read != -1)
+	{
 		parseline(buffer, bytes_read, processes, n);
 		bytes_read = getline(&buffer, &size, file);
 	}
-	if(bytes_read == -1) {
+	if(bytes_read == -1)
+	{
 		free( buffer );
 		fclose( file );
 	}
+
 	return processes;
 }
 
@@ -264,6 +273,13 @@ int cmp_srt(void *_p1, void *_p2) {
 		return 0;
 	else
 		return 1;
+}
+
+int cmp_event_time(void *_p1, void *_p2) {
+	event_t *p1 = (event_t *)_p1;
+	event_t *p2 = (event_t *)_p2;
+	// needs to be implemented
+	return 0;
 }
 
 
@@ -294,16 +310,16 @@ void init_readyq(process_t *processes, int *n, int32_t elapsed_time) {
 
 void add_readyq(heapq_t *blockedq, int32_t elapsed_time) {
 	// peek and see if start time <= elapsed_time
-	while (blockedq->length > 0 && blockedq->elements[0].start_time <= elapsed_time) {
-		heap_push(readyq, heap_pop(blockedq));
-	}
+	// while (blockedq->length > 0 && blockedq->elements[0].start_time <= elapsed_time) {
+	// 	heap_push(readyq, heap_pop(blockedq));
+	// }
 }
 
 
 // if blocked is a queue/heap, then I want the 
 
 void fcfs(process_t *processes, int *n) {
-	heapq_t *blockedq;
+	heapq_t blockedq[1];
 
 	heap_init(readyq, cmp_fcfs);
 	// I/O
