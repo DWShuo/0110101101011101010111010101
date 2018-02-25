@@ -178,16 +178,21 @@ int main(int argc, char **argv){
 }
 
 
-void parseline( char* buffer, int size, process_t *processes, int *n) {
-	process_t proc;
+void parseline( char* buffer, int size)
+{
 	printf("%c\n", buffer[0]);
 	if(buffer[0] == '#')
 	{
 		return;
 	}
 	int count = 1;
+	char proc_id;
+	int arrival_time;
+	int burst_time;
+	int num_bursts;
+	int io_time;
 	char num_buf[10];
-	proc.id = buffer[0];
+	proc_id = buffer[0];
 	int i = 2;
 	while(count < 5)
 	{
@@ -199,51 +204,60 @@ void parseline( char* buffer, int size, process_t *processes, int *n) {
 			i++;
 		}
 		num_buf[j] = '\0';
-		if(count == 1) {
-			proc.init_arrival_time = atoi(num_buf);
-			printf("arrival time: %d\n", proc.init_arrival_time);
+		if(count == 1)
+		{
+			arrival_time = atoi(num_buf);
+			printf("%d\n", arrival_time);
 		}
-		else if(count == 2) {
-			proc.cpu_burst_time = atoi(num_buf);
-			printf( "cpu burst time: %d\n", proc.cpu_burst_time);
+		else if(count == 2)
+		{
+			burst_time = atoi(num_buf);
+			printf( "%d\n", burst_time);
 		}
-		else if(count == 3) {
-			proc.cpu_burst_count = atoi(num_buf);
-			printf("num cpu bursts: %d\n", proc.cpu_burst_count);
+		else if(count == 3)
+		{
+			num_bursts = atoi(num_buf);
+			printf("%d\n", num_bursts);
 		}
-		else if(count == 4) {
-			proc.io_burst_time = atoi(num_buf);
-			printf("io burst time: %d\n", proc.io_burst_time);
+		else if(count == 4)
+		{
+			io_time = atoi(num_buf);
+			printf("%d\n", io_time);
 		}
 		count++;
 		i++;
 	}
-	// now add process to processes array
-	processes[*n] = proc;
-	*n += 1;
+	process_t *proc = (process_t *)calloc(sizeof(process_t), 1);
+	strcpy(proc->name, proc_id);
+	proc->cpu_burst_time = burst_time;
+        proc->cpu_burst_count = num_bursts;
+	proc->io_burst_time = io_time;
+	event_t *event = create_event(EVENT_PROCESS_ARRIVAL, arrival_time, proc);
+	event_push(event);
 }
-
-
-process_t *parse(char *filename, process_t *processes, int *n) {
+void parse(char *filename) {
 	FILE* file = fopen(filename, "r");
-	if(file == NULL) {
+	if(file == NULL)
+	{
 		fprintf(stderr, "ERROR: fopen failed\n");
 		exit(EXIT_FAILURE);
 	}
+    heap_init(eventq, cmp_event_time);
 	char *buffer = NULL;
 	size_t size = 0;
 	//buffer = (char*)malloc(50*sizeof(char));
 	int bytes_read = getline(&buffer, &size, file);
 	//printf("%s : bytes_read = %d\n", buffer, bytes_read);
-	while(bytes_read != -1) {
-		parseline(buffer, bytes_read, processes, n);
+	while(bytes_read != -1)
+	{
+		parseline(buffer, bytes_read);
 		bytes_read = getline(&buffer, &size, file);
 	}
-	if(bytes_read == -1) {
+	if(bytes_read == -1)
+	{
 		free( buffer );
 		fclose( file );
 	}
-	return processes;
 }
 
 
