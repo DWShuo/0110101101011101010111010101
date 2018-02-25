@@ -12,7 +12,7 @@
 #define MAXLINE 100
 
 //EVENT AND PROCESS STRUCTS
-char *schedular_name[3] = {"FCFS", "SRT", "RR"};
+char *scheduler_name[3] = {"FCFS", "SRT", "RR"};
 
 typedef enum{
     FCFS = 0,
@@ -22,7 +22,7 @@ typedef enum{
 
 struct _event_t;
 typedef struct {
-	char name[MAXNAME+1];    //   ]
+	char name;    			 //   ]
 	int32_t cpu_burst_time;  //   ]-- from the input file
 	int32_t cpu_burst_count; //   ]
 	int32_t io_burst_time;   //   ]
@@ -50,7 +50,10 @@ struct _event_t {
 };
 typedef struct _event_t event_t;
 
-//COMPARISON FUCNTIONS
+//COMPARISON FUNCTIONS
+int cmp_fcfs(void *_p1, void *_p2);
+int cmp_srt(void *_p1, void *_p2);
+int cmp_rr(void *_p1, void *_p2);
 
 
 //SIMULATOR AND STATISTIC VARIABLES
@@ -75,6 +78,10 @@ int32_t preemptions;
 
 void parseline( char* buffer, int size);
 void parse(char *filename);
+void preempt_srt(process_t *new_proc);
+void fcfs();
+void srt();
+void rr();
 
 
 int main(int argc, char **argv){
@@ -85,6 +92,10 @@ int main(int argc, char **argv){
 		return EXIT_FAILURE;
 	}
 
+	if (argc == 4 && strcmp(argv[3], "BEGINNING") == 0) {
+		rr_add = 1;
+	} // else END
+
 	struct stat file_info;
 	lstat(argv[1], &file_info);
 	if (!S_ISREG(file_info.st_mode)) { // add more
@@ -93,6 +104,12 @@ int main(int argc, char **argv){
 	}
 
 	parse(argv[1]);
+
+	fcfs();
+
+	srt();
+
+	rr();
 
 	return 0;
 }
@@ -172,4 +189,72 @@ void parse(char *filename) {
 		free( buffer );
 		fclose( file );
 	}
+}
+
+
+int cmp_fcfs(void *_p1, void *_p2) {
+	process_t *p1 = (process_t *)_p1;
+	process_t *p2 = (process_t *)_p2;
+	// compare cpu burst arrival time
+	if (p1->time_slice->time < p2->time_slice->time)
+		return -1;
+	else if (p1->time_slice->time == p2->time_slice->time)
+		return 0;
+	else
+		return 1;
+}
+
+
+int cmp_srt(void *_p1, void *_p2) {
+	process_t *p1 = (process_t *)_p1;
+	process_t *p2 = (process_t *)_p2;
+	// compare remaining time
+	if (p1->remaining_burst_time < p2->remaining_burst_time)
+		return -1;
+	if (p1->remaining_burst_time == p2->remaining_burst_time)
+		return 0;
+	else
+		return 1;
+}
+
+
+int cmp_rr(void *_p1, void *_p2) {
+	// compare arrival time... but we also need to divide bursts
+	return 0;
+}
+
+
+// check if newly arrived process has less remaining time than current process
+// switch out current process w/ new, put current in ready queue
+// skips adding new_proc to ready queue
+void preempt_srt(process_t *new_proc) {
+	// copy new process first?
+	process_t tmp = *current_process;
+	heap_push(readyq, &tmp);
+	current_process = new_proc;
+}
+
+
+void preempt_rr() {
+
+}
+
+
+void fcfs() {
+
+}
+
+
+void srt() {
+
+}
+
+
+void rr() {
+
+}
+
+
+void print_to_file() {
+	// int fd = 
 }
