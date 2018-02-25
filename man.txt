@@ -1,5 +1,0 @@
-parse funcion:
-1. call heap init
-2. bullshit parse logic
-3. create process_t and store each process
-4. create event_t process_arrival
