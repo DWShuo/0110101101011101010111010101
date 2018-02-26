@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <assert.h>
 #include "heapq.h"
 
@@ -58,4 +59,12 @@ void *heap_pop(heapq_t *heap) {
 		return ret;
 	}
 	return last;
+}
+
+void *peek(heapq_t *heap) {
+	void *first;
+	first = NULL;
+	if (heap->length > 0)
+		first = heap->elements[0];
+	return first;
 }

@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <assert.h>
 #include "heapq.h"
 
 #define MAXLINE 100
@@ -29,6 +30,9 @@ typedef struct {
 	int32_t cpu_burst_count; //   ]
 	int32_t io_burst_time;   //   ]
 	int32_t enqueue_time;  // the time this process entered the ready queue
+	// 
+	int32_t next_arrival_time;
+	int32_t cpu_bursts_remaining;
 	// for SRT/RR
 	int32_t start_time;  // latest time the process entered the running state
 	int32_t remaining_burst_time;
@@ -174,6 +178,7 @@ int main(int argc, char **argv){
 }
 
 
+/* parses each line of file and stores as a process */
 void parseline(char* buffer, int size, process_t *processes, int *n) {
 	process_t proc;
 	printf("%c\n", buffer[0]);
@@ -195,32 +200,33 @@ void parseline(char* buffer, int size, process_t *processes, int *n) {
 		num_buf[j] = '\0';
 		if(count == 1) {
 			proc.init_arrival_time = atoi(num_buf);
-			proc.start_time = proc.init_arrival_time;
-			printf("arrival time: %d\n", proc.init_arrival_time);
+			proc.next_arrival_time = proc.init_arrival_time;
 		}
 		else if(count == 2)
 		{
 			proc.cpu_burst_time = atoi(num_buf);
-			printf( "%d\n", proc.cpu_burst_time);
 		}
 		else if(count == 3)
 		{
 			proc.cpu_burst_count = atoi(num_buf);
-			printf("%d\n", proc.cpu_burst_count);
+			proc.cpu_bursts_remaining = proc.cpu_burst_count;
 		}
 		else if(count == 4)
 		{
 			proc.io_burst_time = atoi(num_buf);
-			printf("%d\n", proc.io_burst_time);
 		}
 		count++;
 		i++;
 	}
 	event_t *event = create_event(EVENT_PROCESS_ARRIVAL, proc.init_arrival_time, &proc);
 	event_push(event);
+
+	processes[*n] = proc;
+	*n += 1;
 }
 
 
+/* parses input file and stores in processes array */
 process_t *parse(char *filename, process_t *processes, int *n) {
 	FILE* file = fopen(filename, "r");
 	if(file == NULL)
@@ -231,9 +237,7 @@ process_t *parse(char *filename, process_t *processes, int *n) {
     heap_init(eventq, cmp_event_time);
 	char *buffer = NULL;
 	size_t size = 0;
-	//buffer = (char*)malloc(50*sizeof(char));
 	int bytes_read = getline(&buffer, &size, file);
-	//printf("%s : bytes_read = %d\n", buffer, bytes_read);
 	while(bytes_read != -1)
 	{
 		parseline(buffer, bytes_read, processes, n);
@@ -253,9 +257,9 @@ int cmp_fcfs(void *_p1, void *_p2) {
 	process_t *p1 = (process_t *)_p1;
 	process_t *p2 = (process_t *)_p2;
 	// compare cpu burst arrival time
-	if (p1->start_time < p2->start_time)
+	if (p1->next_arrival_time < p2->next_arrival_time)
 		return -1;
-	else if (p1->start_time == p2->start_time)
+	else if (p1->next_arrival_time == p2->next_arrival_time)
 		return 0;
 	else
 		return 1;
@@ -298,42 +302,120 @@ void preempt_rr() {
 }
 
 
-void init_readyq(process_t *processes, int *n, int32_t elapsed_time) {
+void init_readyq(process_t *processes, int *n, int32_t t, heapq_t *futureq) {
+	printf("n: %d\n", *n);
 	for (int i = 0; i < *n; ++i) {
-		if (processes[i].start_time == elapsed_time) { // shouldn't be init_arrival_time
+		if (processes[i].init_arrival_time == t) { // shouldn't be init_arrival_time
 			heap_push(readyq, processes+i);
+		} else {
+			heap_push(futureq, processes+i);
 		}
 	}
 }
 
 
-void add_readyq(heapq_t *blockedq, int32_t elapsed_time) {
-	// peek and see if start time <= elapsed_time
-	// while (blockedq->length > 0 && blockedq->elements[0].start_time <= elapsed_time) {
-	// 	heap_push(readyq, heap_pop(blockedq));
-	// }
+/* add processes finished with I/O */
+void add_blocked_readyq(heapq_t *blockedq, int32_t t) {
+	// check blocked queue and things that haven't been added yet
+	// peek and see if start time <= t
+	if (blockedq->length > 0) {
+		process_t *next = peek(blockedq);
+		while (blockedq->length > 0 && next->next_arrival_time <= t) {
+			printf("id: %c   next_arrival_time: %d\n", next->id, next->next_arrival_time);
+			printf("next blocked: %c\n", next->id);
+			heap_push(readyq, heap_pop(blockedq));
+			printf("time %dms: Process %c finishes performing I/O [Q stuff]\n", t, next->id);
+			next = peek(blockedq);
+		}
+	}
 }
 
 
-// if blocked is a queue/heap, then I want the 
+/* add new arrivals */
+void add_new_readyq(heapq_t *futureq, int32_t t) {
+	// peek and see if start time <= t
+	if (futureq->length > 0) {
+		process_t *next = peek(futureq);
+		while (futureq->length > 0 && next->next_arrival_time <= t) {
+			printf("id: %c   next_arrival_time: %d\n", next->id, next->next_arrival_time);
+			printf("next new: %c\n", next->id);
+			heap_push(readyq, heap_pop(futureq));
+			next = peek(futureq);
+		}
+	}
+}
+
+
+/* update process that finished running so that you know when to run it next */
+void update_process(process_t *cur_proc, int32_t t, heapq_t *blockedq) {
+	if (cur_proc->cpu_bursts_remaining == 1) {
+		// terminate
+		printf("time %dms: Process %c terminates by finishing its last CPU burst [Q stuff]\n", t, cur_proc->id);
+	}
+	else {
+		printf("%c %d\n", cur_proc->id, cur_proc->cpu_bursts_remaining);
+		cur_proc->next_arrival_time = t + cur_proc->io_burst_time; // + t_cs/2?
+		cur_proc->cpu_bursts_remaining -= 1;
+		heap_push(blockedq, cur_proc);
+		printf("time %dms: Process %c finishes using CPU [Q stuff]\n", t, cur_proc->id);
+		printf("time %dms: Process %c starts performing I/O [Q stuff]\n", t, cur_proc->id);
+	}
+}
+
 
 void fcfs(process_t *processes, int *n) {
+	heapq_t futureq[1];
 	heapq_t blockedq[1];
-	heap_init(readyq, cmp_fcfs);
-	// I/O
-	heap_init(blockedq, cmp_fcfs); // except based on something else... I/O time
+	process_t *cur_proc;
 
-	int32_t elapsed_time = 0;
-	init_readyq(processes, n, elapsed_time);
-	// while readyq? is empty
-		// check for arrival time >= current_time and add to ready queue
-		// wait for time of first cpu burst
-	while (readyq->length > 0) {
-		current_process = heap_pop(readyq);
-		elapsed_time += t_cs; // probably shouldn't add time at the end
-		elapsed_time += current_process->cpu_burst_time;
-		// check if I can take from blocked
+	heap_init(readyq, cmp_fcfs);
+	heap_init(blockedq, cmp_fcfs); // except based on something else... I/O time
+	heap_init(futureq, cmp_fcfs); // look at future based on arrival time
+
+	int32_t t = 0;
+	init_readyq(processes, n, t, futureq);
+	assert(readyq->length > 0);
+	
+	// while (readyq->length > 0) { // I think I need to check every second...
+	// 	cur_proc = heap_pop(readyq);
+	// 	printf("time %dms: Process %c starts using the CPU [Q stuff]\n", t, cur_proc->id);
+
+	// 	t += t_cs; // probably shouldn't add time at the end
+	// 	t += cur_proc->cpu_burst_time;
+	// 	printf("time %dms: Process %c finishes using CPU [Q stuff]\n", t, cur_proc->id);
+	// 	// check if I can take from blocked
+	// 	add_blocked_readyq(blockedq, t);
+	// 	add_new_readyq(futureq, t);
+
+	// 	// first see if cur_proc is terminated or not
+	// 	update_process(cur_proc, t);
+	// }
+
+	int32_t prev_t = 0;
+	cur_proc = heap_pop(readyq);
+	printf("time %dms: Process %c starts using the CPU [Q stuff]\n", t, cur_proc->id);
+	// while (readyq->length > 0) { // the issue is that when b is popped there is nothing
+	int i = 0;
+	while (i < 100) {
+		// check if current process is finished
+			// if it is, update process and pop next process
+		if (cur_proc->cpu_burst_time == t - prev_t) {
+			update_process(cur_proc, t, blockedq);
+			cur_proc = heap_pop(readyq);
+			printf("time %dms: Process %c starts using the CPU [Q stuff]\n", t, cur_proc->id);
+			prev_t = t;
+			i += 1;
+		}
+
+		// add to ready queue
+		add_blocked_readyq(blockedq, t);
+		add_new_readyq(futureq, t);
+		// printf("readyq->length: %d\n", readyq->length);
+		// check I/O
+		t += 1;
 	}
+
+	printf("time %dms: Simulator ended for FCFS\n", t);
 }
 
 
