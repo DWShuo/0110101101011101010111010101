@@ -1,0 +1,8 @@
+make clean
+make
+for n in 01 02 03
+do
+	./main ./ex_output/input$n.txt ./program_output/out2.txt > ./program_output/out1.txt
+	diff --strip-trailing-cr -u ./ex_output/terminal_output$n.txt ./program_output/out1.txt
+	diff --strip-trailing-cr -u ./ex_output/statout$n.txt ./program_output/out2.txt
+done	

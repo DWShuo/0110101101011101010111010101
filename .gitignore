@@ -1,0 +1,4 @@
+#Ignore the README file make changes on github if needed
+README.MD
+#Ignore the build dir
+build/

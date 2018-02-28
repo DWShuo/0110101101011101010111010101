@@ -436,3 +436,4 @@ void print_to_file() {
 
 	fclose(file);
 }
+
