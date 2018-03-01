@@ -68,3 +68,7 @@ void *peek(heapq_t *heap) {
 		first = heap->elements[0];
 	return first;
 }
+
+int length(heapq_t *heap) {
+	return heap->length;
+}

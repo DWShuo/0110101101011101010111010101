@@ -16,5 +16,6 @@ void heap_init(heapq_t *heap, int (*cmp)(void *, void *));
 void heap_push(heapq_t *heap, void *item);
 void *heap_pop(heapq_t *heap);
 void *peek(heapq_t *heap);
+int length();
 
 #endif
