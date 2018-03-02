@@ -12,7 +12,7 @@
 #define MAXLINE 100
 
 //EVENT AND PROCESS STRUCTS
-char *schedular_name[3] = {"FCFS", "SRT", "RR"};
+char *scheduler_name[3] = {"FCFS", "SRT", "RR"};
 
 typedef enum{
     FCFS = 0,
@@ -69,9 +69,43 @@ int32_t turnaround_count;
 int32_t context_switches;
 int32_t preemptions;
 
+void parseline( char* buffer, int size);
+int parse(char *filename);
+
 //TODO: implement compare functions
 //COMPARE FUNCTIONS
+int cmp_enqueue_time(void *_p1, void *_p2) {
+	process_t p1 = *(process_t *)_p1;
+	process_t p2 = *(process_t *)_p2;
+	if (p1.enqueue_time < p2.enqueue_time)
+		return -1;
+	else if (p1.enqueue_time == p2.enqueue_time)
+		return 0;
+	else
+		return 1;
+}
 
+int cmp_remaining_burst_time(void *_p1, void *_p2) {
+	process_t p1 = *(process_t *)_p1;
+	process_t p2 = *(process_t *)_p2;
+	if (p1.remaining_burst_time < p2.remaining_burst_time)
+		return -1;
+	else if (p1.remaining_burst_time == p2.remaining_burst_time)
+		return 0;
+	else
+		return 1;
+}
+
+int cmp_event_time(void *_e1, void *_e2) {
+	event_t e1 = *(event_t*)_e1;
+	event_t e2 = *(event_t*)_e2;
+	if (e1.time < e2.time)
+		return -1;
+	else if (e1.time == e2.time)
+		return 0;
+	else
+		return 1;
+}
 
 //goes
 //here
@@ -202,11 +236,8 @@ void run_simulator(scheduler_t scheduler, char *stats) {
 			default:
 				break;
 		}
-	
+	}
 }       
-
-void parseline( char* buffer, int size);
-void parse(char *filename);
 
 int main(int argc, char **argv){
 
@@ -228,7 +259,7 @@ int main(int argc, char **argv){
 	fclose(fopen(argv[2], "w"));
 	int i;
 	for (i = 0; i < 3; i++) {
-		if (!read_file(argv[1])) {
+		if (!parse(argv[1])) {
 			return EXIT_FAILURE;
 		}
 		if (i == RR && argc == 4) {
@@ -248,8 +279,7 @@ int main(int argc, char **argv){
 void parseline( char* buffer, int size)
 {
 	printf("%c\n", buffer[0]);
-	if(buffer[0] == '#')
-	{
+	if(buffer[0] == '#') {
 		return;
 	}
 	int count = 1;
@@ -261,33 +291,27 @@ void parseline( char* buffer, int size)
 	char num_buf[10];
 	proc_id = buffer[0];
 	int i = 2;
-	while(count < 5)
-	{
+	while(count < 5) {
 		int j = 0;
-		while(isalnum(buffer[i]))
-		{
+		while(isalnum(buffer[i])) {
 			num_buf[j] = buffer[i];
 			j++;
 			i++;
 		}
 		num_buf[j] = '\0';
-		if(count == 1)
-		{
+		if(count == 1) {
 			arrival_time = atoi(num_buf);
 			printf("%d\n", arrival_time);
 		}
-		else if(count == 2)
-		{
+		else if(count == 2) {
 			burst_time = atoi(num_buf);
 			printf( "%d\n", burst_time);
 		}
-		else if(count == 3)
-		{
+		else if(count == 3) {
 			num_bursts = atoi(num_buf);
 			printf("%d\n", num_bursts);
 		}
-		else if(count == 4)
-		{
+		else if(count == 4) {
 			io_time = atoi(num_buf);
 			printf("%d\n", io_time);
 		}
@@ -303,27 +327,24 @@ void parseline( char* buffer, int size)
 	event_push(event);
 }
 
-void parse(char *filename) {
+int parse(char *filename) {
 	FILE* file = fopen(filename, "r");
-	if(file == NULL)
-	{
+	if(file == NULL) {
 		fprintf(stderr, "ERROR: fopen failed\n");
 		exit(EXIT_FAILURE);
 	}
     heap_init(eventq, cmp_event_time);
 	char *buffer = NULL;
 	size_t size = 0;
-	//buffer = (char*)malloc(50*sizeof(char));
 	int bytes_read = getline(&buffer, &size, file);
-	//printf("%s : bytes_read = %d\n", buffer, bytes_read);
-	while(bytes_read != -1)
-	{
+	while(bytes_read != -1) {
 		parseline(buffer, bytes_read);
 		bytes_read = getline(&buffer, &size, file);
 	}
-	if(bytes_read == -1)
-	{
+	if(bytes_read == -1) {
 		free( buffer );
 		fclose( file );
+		return 0;
 	}
+	return 1;
 }
