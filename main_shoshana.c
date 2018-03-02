@@ -325,7 +325,8 @@ void fcfs(process_t *processes, int *n) {
 			print_event(t, msg, readyq);
 		}
 		/* check if current process exists and is finished */
-		if (!switch_in && !switch_out && cur_proc != NULL && (cur_proc->cpu_burst_time) == t - prev_t) {
+		if (!switch_in && !switch_out && cur_proc != NULL &&
+				(cur_proc->cpu_burst_time) == t - prev_t) {
 			update_process(cur_proc, t, blockedq, readyq, &terminated);
 			cur_proc = NULL;
 			switch_out = 1;
@@ -333,8 +334,6 @@ void fcfs(process_t *processes, int *n) {
 		/* start running next process in ready queue if no current process */
 		if (readyq->length > 0 && cur_proc == NULL) {
 			cur_proc = heap_pop(readyq);
-			// sprintf(msg, "Process %c starts using the CPU", cur_proc->id);
-			// print_event(t, msg, readyq);
 			prev_t = t;
 		}
 
