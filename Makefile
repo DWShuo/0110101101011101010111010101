@@ -4,7 +4,7 @@ CFLAGS = -Werror -Wall
 all : main
 
 clean :
-	rm main main.exe heapq.o
+	rm main heapq.o
 
 heapq.o : heapq.c heapq.h
 

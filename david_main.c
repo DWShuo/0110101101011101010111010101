@@ -71,12 +71,25 @@ int32_t preemptions;
 
 //TODO: implement compare functions
 //COMPARE FUNCTIONS
-
-
-//goes
-//here
-
-
+// comparison functions for the priority queue order
+int cmp_event_time(void *_e1, void *_e2) {
+	event_t *e1 = (event_t *)_e1;
+	event_t *e2 = (event_t *)_e2;
+	// sort by time, type, process name
+	
+}
+int cmp_enqueue_time(void *_p1, void *_p2) {
+	process_t *p1 = (process_t *)_p1;
+	process_t *p2 = (process_t *)_p2;
+	// sort by time, process name
+	
+}
+int cmp_remaining_burst_time(void *_p1, void *_p2) {
+	process_t *p1 = (process_t *)_p1;
+	process_t *p2 = (process_t *)_p2;
+	// sort by time, process name
+	
+}
 //COMPARE FUNCTION
 
 //NOTE: HEAP HELPER FUNCTIONS
@@ -137,18 +150,44 @@ void add_to_readyq(process_t *proc, char *reason) {//printing
 	dump_readyq();
 }
 
-//TODO: implement preempt
+//TODO: check logic on preempt implementation 
 int preempt(process_t *proc, scheduler_t scheduler, char *reason) {
 	if (current_process == NULL) {
 		return 0;
 	}
-	//......
-	
-	//........
-	
+	int current_process_elapsed = current_time - current_process->start_time;
+	int condition = 0;
+	if (scheduler == SRT) {
+		condition = proc->remaining_burst_time < current_process->remaining_burst_time - current_process_elapsed;
+	} else if (scheduler == RR) {
+		condition = 1;
+	}
+	if (condition) {
+		preemptions++;
+		current_process->remaining_burst_time -= current_process_elapsed;
+		if (scheduler == SRT) {
+			printf("time %dms: Process %s %s and will preempt %s ", current_time, proc->name, reason, current_process->name);
+		} else if (scheduler == RR) {
+			printf("time %dms: Time slice expired; process %s preempted with %dms to go ", current_time, current_process->name, current_process->remaining_burst_time);
+		}
+		dump_readyq();
+		// cancel the pending context switch out event for the current process
+		current_process->context_switch_out->cancelled = 1;
+		current_process->context_switch_out = NULL;
+		if (scheduler == RR) { current_time -= t_cs; }
+		// enqueue current process at the end
+		ready_push(current_process, 0);
+		if (scheduler == RR) { current_time += t_cs; }
+		// start proc
+		event_t *event = create_event(EVENT_CONTEXT_SWITCH_IN, current_time + t_cs, proc);
+		event_push(event);
+		return 1;
+	} else {
+		return 0;
+	}
 }   
 //SIM
-//TODO: 420 blaze and code
+//TODO: fill this out later
 void run_simulator(scheduler_t scheduler, char *stats) {
 	current_process = NULL;
 	current_time = 0;
