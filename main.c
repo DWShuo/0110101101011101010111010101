@@ -108,6 +108,7 @@ void ready_push(process_t *proc, int beginning) {
 	wait_count++;
 	heap_push(readyq, proc);
 }
+
 process_t *ready_pop() {
 	if (readyq->length > 0) {
 		process_t *proc = (process_t *)heap_pop(readyq);
@@ -117,9 +118,11 @@ process_t *ready_pop() {
 		return NULL;
 	}
 }
+
 process_t *ready_peek() {
 	return readyq->length > 0 ? (process_t *)readyq->elements[0] : NULL;
 }
+
 void dump_readyq() {
 	printf("[Q");
 	if (readyq->length == 0) {
@@ -133,6 +136,7 @@ void dump_readyq() {
 		printf("]\n");
 	}
 }
+
 void add_to_readyq(process_t *proc, char *reason) {//printing 
 	ready_push(proc, rr_add);
 	printf("time %dms: Process %c %s added to ready queue ", current_time, proc->id, reason);
@@ -305,6 +309,7 @@ void preempt_rr() {
 }
 
 
+/* initialize ready queue with processes w/ arrival time 0 */
 void init_readyq(process_t *processes, int *n, int32_t t, heapq_t *futureq) {
 	printf("n: %d\n", *n);
 	for (int i = 0; i < *n; ++i) {
@@ -319,8 +324,6 @@ void init_readyq(process_t *processes, int *n, int32_t t, heapq_t *futureq) {
 
 /* add processes finished with I/O */
 void add_blocked_readyq(heapq_t *blockedq, int32_t t) {
-	// check blocked queue and things that haven't been added yet
-	// peek and see if start time <= t
 	if (blockedq->length > 0) {
 		process_t *next = peek(blockedq);
 		while (blockedq->length > 0 && next->next_arrival_time <= t) {
@@ -336,7 +339,6 @@ void add_blocked_readyq(heapq_t *blockedq, int32_t t) {
 
 /* add new arrivals */
 void add_new_readyq(heapq_t *futureq, int32_t t) {
-	// peek and see if start time <= t
 	if (futureq->length > 0) {
 		process_t *next = peek(futureq);
 		while (futureq->length > 0 && next->next_arrival_time <= t) {

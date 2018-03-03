@@ -29,19 +29,29 @@ typedef struct {
 
 /* simulator global variables */
 int rr_add = 0;
-int t_cs = 8;
+int t_cs = 6; // make sure this is 8
 int t_slice = 80;
 char msg[MAXLINE];
+
+/* stats */
+int total_cpu_burst_time; // will be divided by # of bursts
+int total_wait_time; // will be divided by # of bursts
+int total_turnaround_t; // will be divided by # of bursts
+int total_num_cs;
+int total_num_preempts;
+int num_bursts;
 
 int cmp_fcfs(void *_p1, void *_p2);
 int cmp_srt(void *_p1, void *_p2);
 void parseline( char* buffer, int size, process_t *processes, int *n);
 process_t *parse(char *filename, process_t *processes, int *n);
-void preempt_srt(heapq_t *readyq, process_t *cur_proc, process_t *new_proc);
-void fcfs(process_t *process_t, int *n);
-void srt(process_t *processes, int *n);
-void rr(process_t *processes, int *n);
+void preempt_srt(int pre1, int pre2, process_t *cur_proc, int32_t t, int32_t *prev_t,
+		heapq_t *readyq, heapq_t *blockedq, int *terminated, int *switch_out);
+void fcfs(process_t *process_t, int n);
+void srt(process_t *processes, int n);
+void rr(process_t *processes, int n);
 void print_to_file();
+void reset_processes(process_t *processes, int n);
 
 
 int main(int argc, char **argv){
@@ -68,13 +78,13 @@ int main(int argc, char **argv){
 
 	parse(argv[1], processes, &n); /* store processes from file in array */
 
-	fcfs(processes, &n);
+	fcfs(processes, n);
+	reset_processes(processes, n);
 
-	// reset first
-	srt(processes, &n);
+	srt(processes, n);
+	// reset_processes(processes, n);
 
-	// reset first
-	rr(processes, &n);
+	// rr(processes, n);
 
 	print_to_file();
 
@@ -106,6 +116,7 @@ void parseline(char* buffer, int size, process_t *processes, int *n) {
 		}
 		else if(count == 2) {
 			proc.cpu_burst_time = atoi(num_buf);
+			proc.remaining_burst_time = proc.cpu_burst_time;
 		}
 		else if(count == 3) {
 			proc.cpu_burst_count = atoi(num_buf);
@@ -165,7 +176,7 @@ int cmp_fcfs(void *_p1, void *_p2) {
 }
 
 
-/* compares processes based on remaining CPU burse time */
+/* compares processes based on remaining CPU burst time */
 int cmp_srt(void *_p1, void *_p2) {
 	process_t *p1 = (process_t *)_p1;
 	process_t *p2 = (process_t *)_p2;
@@ -179,22 +190,6 @@ int cmp_srt(void *_p1, void *_p2) {
 		return 0;
 	else
 		return 1;
-}
-
-
-// check if newly arrived process has less remaining time than current process
-// switch out current process w/ new, put current in ready queue
-// skips adding new_proc to ready queue
-void preempt_srt(heapq_t *readyq, process_t *cur_proc, process_t *new_proc) {
-	// copy new process first?
-	process_t tmp = *cur_proc;
-	heap_push(readyq, &tmp);
-	cur_proc = new_proc;
-}
-
-
-void preempt_rr() {
-
 }
 
 
@@ -218,12 +213,38 @@ void print_event(int32_t t, char *msg, heapq_t *readyq) {
 }
 
 
+void create_stats_string(char *title) {
+	char stat_string[300];
+	sprintf(stat_string, "%s\n"
+		"-- average CPU burst time: %.2f ms\n"
+		"-- average wait time: %.2f ms\n"
+		"-- average turnaround time: %.2f ms\n"
+		"-- total number of context switches: %d\n"
+		"-- total number of preemptions: %d\n",
+		title, (float)total_cpu_burst_time/num_bursts, (float)total_wait_time/num_bursts,
+		(float)total_turnaround_t/num_bursts, total_num_cs, total_num_preempts);
+	printf("%s", stat_string);
+}
+
+
+void reset_processes(process_t *processes, int n) {
+	for (int i = 0; i < n; ++i) {
+		processes[i].next_arrival_time = processes[i].init_arrival_time;
+		processes[i].cpu_bursts_remaining = processes[i].cpu_burst_count;
+		// start time?
+		// remaining burst time... not sure if I take care of this somewhere else
+		processes[i].remaining_burst_time = processes[i].cpu_burst_time;
+	}
+	printf("\n");
+}
+
+
 /* initialize ready queue with processes w/ arrival time 0 */
-void init_readyq(process_t *processes, int *n, int32_t t, heapq_t *readyq, heapq_t *futureq) {
-	for (int i = 0; i < *n; ++i) {
+void init_readyq(process_t *processes, int n, int32_t t, heapq_t *readyq, heapq_t *futureq) {
+	for (int i = 0; i < n; ++i) {
 		if (processes[i].init_arrival_time == t) {
 			heap_push(readyq, processes+i);
-			sprintf(msg, "Process %c arrives and added to ready queue", processes[i].id);
+			sprintf(msg, "Process %c arrived and added to ready queue", processes[i].id);
 			print_event(t, msg, readyq);
 		} else {
 			heap_push(futureq, processes+i);
@@ -232,64 +253,84 @@ void init_readyq(process_t *processes, int *n, int32_t t, heapq_t *readyq, heapq
 }
 
 
+// should I be combining this with add_blocked_readyq? Only difference is message
 /* add processes finished with I/O */
-void add_blocked_readyq(heapq_t *readyq, heapq_t *blockedq, int32_t t) {
+int add_blocked_readyq(heapq_t *readyq, heapq_t *blockedq, int32_t t) {
 	if (blockedq->length > 0) {
 		process_t *next = peek(blockedq);
 		while (blockedq->length > 0 && next->next_arrival_time <= t) {
 			heap_push(readyq, heap_pop(blockedq));
-			sprintf(msg, "Process %c finishes performing I/O", next->id);
+			sprintf(msg, "Process %c completed I/O; added to ready queue", next->id);
 			print_event(t, msg, readyq);
 			next = peek(blockedq);
 		}
 	}
+	if (readyq->length > 0) {
+		process_t *next = peek(readyq);
+		return next->cpu_burst_time;
+	} else {
+		return 0;
+	}
 }
 
-
 /* add new arrivals */
-void add_new_readyq(heapq_t *readyq, heapq_t *futureq, int32_t t) {
+int add_new_readyq(heapq_t *readyq, heapq_t *futureq, int32_t t) {
 	if (futureq->length > 0) {
 		process_t *next = peek(futureq);
 		while (futureq->length > 0 && next->next_arrival_time <= t) {
 			heap_push(readyq, heap_pop(futureq));
-			sprintf(msg, "Process %c arrives and added to ready queue", next->id);
+			// if preemption... should say preempt
+			sprintf(msg, "Process %c arrived and added to ready queue", next->id);
 			print_event(t, msg, readyq);
 			next = peek(futureq);
 		}
+	}
+	if (readyq->length > 0) {
+		process_t *next = peek(readyq);
+		return next->cpu_burst_time;
+	} else {
+		return 0;
 	}
 }
 
 
 /* update process that finished running so that you know when to run it next */
 void update_process(process_t *cur_proc, int32_t t, heapq_t *blockedq, heapq_t *readyq, int *terminated) {
+	total_cpu_burst_time += cur_proc->cpu_burst_time;
+	// total_wait_time +=   // a little more complicated...
+	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
+	total_num_cs += 1;
+	num_bursts += 1;
 	if (cur_proc->cpu_bursts_remaining == 1) {
-		// terminate
 		*terminated += 1;
-		sprintf(msg, "Process %c terminates by finishing its last CPU burst", cur_proc->id);
+		sprintf(msg, "Process %c terminated", cur_proc->id);
 		print_event(t, msg, readyq);
 	}
 	else {
-		printf("%c %d\n", cur_proc->id, cur_proc->cpu_bursts_remaining);
-		cur_proc->next_arrival_time = t + t_cs/2 + cur_proc->io_burst_time; // + t_cs/2?
+		// This might still hold in SRT
+		cur_proc->next_arrival_time = t + t_cs/2 + cur_proc->io_burst_time;
 		cur_proc->cpu_bursts_remaining -= 1;
 		heap_push(blockedq, cur_proc);
-		sprintf(msg, "Process %c finishes using CPU", cur_proc->id);
+		if (cur_proc->cpu_bursts_remaining > 1)
+			sprintf(msg, "Process %c completed a CPU burst; %d bursts to go", cur_proc->id, cur_proc->cpu_bursts_remaining);
+		else
+			sprintf(msg, "Process %c completed a CPU burst; %d burst to go", cur_proc->id, cur_proc->cpu_bursts_remaining);
 		print_event(t, msg, readyq);
-		sprintf(msg, "Process %c starts performing I/O", cur_proc->id);
+		sprintf(msg, "Process %c switching out of CPU; will block on I/O until time %dms", cur_proc->id, cur_proc->next_arrival_time);
 		print_event(t, msg, readyq);
 	}
 }
 
 
 /* First Come First Serve */
-void fcfs(process_t *processes, int *n) {
+void fcfs(process_t *processes, int n) {
 	heapq_t readyq[1]; /* ready state */
 	heapq_t futureq[1]; /* not yet arrived */
 	heapq_t blockedq[1]; /* blocked state */
 	process_t *cur_proc; /* running state */
 
 	heap_init(readyq, cmp_fcfs);
-	heap_init(blockedq, cmp_fcfs); // except based on something else... I/O time
+	heap_init(blockedq, cmp_fcfs); // next arrival time signifies end of I/O time
 	heap_init(futureq, cmp_fcfs); // look at future based on arrival time
 
 	int32_t t = 0;
@@ -298,7 +339,14 @@ void fcfs(process_t *processes, int *n) {
 	int switch_out = 0;
 	int switch_in = 1;
 
-	sprintf(msg, "Starting simulation for FCFS");
+	total_cpu_burst_time = 0; // will be divided by # of bursts
+	total_wait_time = 0; // will be divided by # of bursts
+	total_turnaround_t = 0; // will be divided by # of bursts
+	total_num_cs = 0;
+	total_num_preempts = 0;
+	num_bursts = 0;
+
+	sprintf(msg, "Simulator started for FCFS");
 	print_event(t, msg, readyq);
 
 	init_readyq(processes, n, t, readyq, futureq);
@@ -308,56 +356,102 @@ void fcfs(process_t *processes, int *n) {
 		cur_proc = heap_pop(readyq);
 	}
 
-	while (terminated < *n) {
-		/* check if in switch out state and if finished */
-		if (switch_out && (t - prev_t == t_cs/2)) {
-			// should I move some finish cpu stuff up here?
-			switch_out = 0;
-			switch_in = 1;
-			prev_t = t;
+	// end of switch out can go directly to switch in or nothing
+	// end of switch goes directly to beginning of cpu burst
+	// end of cpu burst goes directly switch out
 
-		}
-		/* check if in switch in state and if finished */
-		if (switch_in && (t - prev_t == t_cs/2)) {
-			switch_in = 0;
-			prev_t = t;
-			sprintf(msg, "Process %c starts using the CPU", cur_proc->id);
-			print_event(t, msg, readyq);
-		}
+	// change conditions to easy-to-read states?
+	while (terminated < n) {
+		/* ONE: CPU burst completion */
+
 		/* check if current process exists and is finished */
-		if (!switch_in && !switch_out && cur_proc != NULL &&
+		if (cur_proc != NULL && !switch_in && !switch_out &&
 				(cur_proc->cpu_burst_time) == t - prev_t) {
 			update_process(cur_proc, t, blockedq, readyq, &terminated);
 			cur_proc = NULL;
 			switch_out = 1;
-		}
-		/* start running next process in ready queue if no current process */
-		if (readyq->length > 0 && cur_proc == NULL) {
-			cur_proc = heap_pop(readyq);
 			prev_t = t;
 		}
+
+		/* check if in switch out state and if finished */
+		if (switch_out && (t - prev_t == t_cs/2)) { // when >= it terminates, may need to change order
+			switch_out = 0;
+			prev_t = t;
+		}
+
+		/* TWO: I/O burst completion */
 
 		/* add to ready queue */
 		add_blocked_readyq(readyq, blockedq, t);
 		add_new_readyq(readyq, futureq, t);
 
+		/* THREE: process arrival */
+
+		/* start running next process in ready queue if no current process */
+		if (readyq->length > 0 && cur_proc == NULL && !switch_out && !switch_in) {
+			cur_proc = heap_pop(readyq);
+			switch_in = 1;
+			prev_t = t;
+		}
+
+		/* check if in switch in state and if finished */
+		if (switch_in && (t - prev_t == t_cs/2)) {
+			switch_in = 0;
+			prev_t = t;
+			sprintf(msg, "Process %c started using the CPU", cur_proc->id);
+			print_event(t, msg, readyq);
+
+		}
+
 		t += 1;
 	}
 
+	t += (t_cs/2 - 1); // makes up for not finishing last switch out
+
 	printf("time %dms: Simulator ended for FCFS\n", t);
+
+	create_stats_string("Algorithm FCFS");
+}
+
+
+// check if newly arrived process has less remaining time than current process
+// switch out current process w/ new, put current in ready queue
+// skips adding new_proc to ready queue
+void preempt_srt(int pre1, int pre2, process_t *cur_proc, int32_t t, int32_t *prev_t,
+		heapq_t *readyq, heapq_t *blockedq, int *terminated, int *switch_out) {
+	// save remaining time of current process that is being preempted
+	// how will switch_in/switch out work? just set to switch out?
+	total_num_preempts += 1;
+	if (cur_proc != NULL && pre1 != 0 && pre2 != 0
+		&& pre1 < cur_proc->remaining_burst_time
+			&& pre2 < cur_proc->remaining_burst_time) {
+
+		process_t *next = peek(readyq);
+		sprintf(msg, "Process %c arrived and will preempt %c", next->id, cur_proc->id);
+		print_event(t, msg, readyq);
+
+		heap_push(readyq, cur_proc);
+
+		cur_proc->remaining_burst_time = t - *prev_t;
+		update_process(cur_proc, t, blockedq, readyq, terminated);
+
+		cur_proc = NULL;
+		*switch_out = 1;
+		*prev_t = t;
+	}
 }
 
 
 /* Shortest Remaining Time */
-void srt(process_t *processes, int *n) {
+void srt(process_t *processes, int n) {
 	heapq_t readyq[1]; /* ready state */
 	heapq_t futureq[1]; /* not yet arrived */
 	heapq_t blockedq[1]; /* blocked state */
 	process_t *cur_proc; /* running state */
 
 	heap_init(readyq, cmp_srt);
-	heap_init(blockedq, cmp_srt);
-	heap_init(futureq, cmp_srt);
+	heap_init(blockedq, cmp_fcfs); // not sure about this yet
+	heap_init(futureq, cmp_fcfs); // I think this should be sorted by arrival time
 
 	int32_t t = 0;
 	int32_t prev_t = 0;
@@ -365,7 +459,14 @@ void srt(process_t *processes, int *n) {
 	int switch_out = 0;
 	int switch_in = 1;
 
-	sprintf(msg, "Starting simulation for SRT");
+	total_cpu_burst_time = 0; // will be divided by # of bursts
+	total_wait_time = 0; // will be divided by # of bursts
+	total_turnaround_t = 0; // will be divided by # of bursts
+	total_num_cs = 0;
+	total_num_preempts = 0;
+	num_bursts = 0;
+
+	sprintf(msg, "Simulator started for SRT");
 	print_event(t, msg, readyq);
 
 	init_readyq(processes, n, t, readyq, futureq);
@@ -375,29 +476,85 @@ void srt(process_t *processes, int *n) {
 		cur_proc = heap_pop(readyq);
 	}
 
-	while (terminated < *n) {
-		terminated += 1; // TO DO: implement
+	while (terminated < n) {
+		/* ONE: CPU burst completion */
+
+		/* check if current process exists and is finished */
+		// also need to update remaining time to cpu_burst_time
+		if (cur_proc != NULL && !switch_in && !switch_out &&
+				(cur_proc->cpu_burst_time) == t - prev_t) {
+			cur_proc->remaining_burst_time = cur_proc->cpu_burst_time;
+			update_process(cur_proc, t, blockedq, readyq, &terminated);
+			cur_proc = NULL;
+			switch_out = 1;
+			prev_t = t;
+		}
+
+		/* check if in switch out state and if finished */
+		if (switch_out && (t - prev_t == t_cs/2)) { // when >= it terminates, may need to change order
+			switch_out = 0;
+			prev_t = t;
+		}
+
+		/* TWO: I/O burst completion */
+
 		/* add to ready queue */
-		add_blocked_readyq(readyq, blockedq, t);
-		add_new_readyq(readyq, futureq, t);
+		// preemption should be checked in these functions
+		// maybe return updated shortest running time, 0 if nothing
+		// there's something going wrong w/ cur_proc... is it currently null?
+		int preempt1 = add_blocked_readyq(readyq, blockedq, t);
+		int preempt2 = add_new_readyq(readyq, futureq, t);
+		// I think I need to make sure it is checking new bursts,
+		// not unfinished bursts. Or do I?
+		preempt_srt(preempt1, preempt2, cur_proc, t, &prev_t, readyq, blockedq,
+			&terminated, &switch_out);
+
+		/* THREE: process arrival */
+
+		/* start running next process in ready queue if no current process */
+		if (readyq->length > 0 && cur_proc == NULL && !switch_out && !switch_in) {
+			cur_proc = heap_pop(readyq);
+			switch_in = 1;
+			prev_t = t;
+		}
+
+		/* check if in switch in state and if finished */
+		if (switch_in && (t - prev_t == t_cs/2)) {
+			switch_in = 0;
+			prev_t = t;
+			sprintf(msg, "Process %c started using the CPU", cur_proc->id);
+			print_event(t, msg, readyq);
+
+		}
+
+		t += 1;
 	}
 
 	printf("time %dms: Simulator ended for SRT\n", t);
+
+	// create_stats_string("Algorithm SRT");
 }
 
 
 /* Round Robin */
-void rr(process_t *processes, int *n) {
+void rr(process_t *processes, int n) {
 	heapq_t readyq[1]; /* ready state */
 	heapq_t futureq[1]; /* not yet arrived */
 	heapq_t blockedq[1]; /* blocked state */
 	process_t *cur_proc; /* running state */
 
 	int32_t t = 0;
-	int32_t prev_t = 0;
-	int terminated = 0;
-	int switch_out = 0;
-	int switch_in = 1;
+	// int32_t prev_t = 0;
+	// int terminated = 0;
+	// int switch_out = 0;
+	// int switch_in = 1;
+
+	total_cpu_burst_time = 0; // will be divided by # of bursts
+	total_wait_time = 0; // will be divided by # of bursts
+	total_turnaround_t = 0; // will be divided by # of bursts
+	total_num_cs = 0;
+	total_num_preempts = 0;
+	num_bursts = 0;
 
 	sprintf(msg, "Starting simulation for Round Robin");
 	print_event(t, msg, readyq);
@@ -410,6 +567,8 @@ void rr(process_t *processes, int *n) {
 	}
 
 	printf("time %dms: Simulator ended for RR\n", t);
+
+	// create_stats_string("Algorithm RR");
 }
 
 void avg_wait_time(process_t processes) {

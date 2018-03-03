@@ -1,0 +1,19 @@
+Algorithm FCFS
+-- average CPU burst time: 102.50 ms
+-- average wait time: 327.67 ms
+-- average turnaround time: 436.17 ms
+-- total number of context switches: 30
+-- total number of preemptions: 0
+Algorithm SRT
+-- average CPU burst time: 102.50 ms
+-- average wait time: 195.67 ms
+-- average turnaround time: 304.17 ms
+-- total number of context switches: 30
+-- total number of preemptions: 0
+Algorithm RR
+-- average CPU burst time: 102.50 ms
+-- average wait time: 507.67 ms
+-- average turnaround time: 619.17 ms
+-- total number of context switches: 60
+-- total number of preemptions: 30
+
