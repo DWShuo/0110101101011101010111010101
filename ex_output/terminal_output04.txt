@@ -408,4 +408,3 @@ time 3915ms: Process Y terminated [Q Z]
 time 3921ms: Process Z started using the CPU with 11ms remaining [Q <empty>]
 time 3932ms: Process Z terminated [Q <empty>]
 time 3935ms: Simulator ended for RR
-

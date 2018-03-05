@@ -1,0 +1,30 @@
+time 0ms: Simulator started for FCFS [Q <empty>]
+time 0ms: Process A arrived and added to ready queue [Q A]
+time 0ms: Process B arrived and added to ready queue [Q A B]
+time 4ms: Process A started using the CPU [Q B]
+time 100ms: Process A terminated [Q B]
+time 108ms: Process B started using the CPU [Q <empty>]
+time 208ms: Process B terminated [Q <empty>]
+time 212ms: Simulator ended for FCFS
+
+time 0ms: Simulator started for SRT [Q <empty>]
+time 0ms: Process A arrived and added to ready queue [Q A]
+time 0ms: Process B arrived and added to ready queue [Q A B]
+time 4ms: Process A started using the CPU [Q B]
+time 100ms: Process A terminated [Q B]
+time 108ms: Process B started using the CPU [Q <empty>]
+time 208ms: Process B terminated [Q <empty>]
+time 212ms: Simulator ended for SRT
+
+time 0ms: Simulator started for RR [Q <empty>]
+time 0ms: Process A arrived and added to ready queue [Q A]
+time 0ms: Process B arrived and added to ready queue [Q A B]
+time 4ms: Process A started using the CPU [Q B]
+time 84ms: Time slice expired; process A preempted with 16ms to go [Q B]
+time 92ms: Process B started using the CPU [Q A]
+time 172ms: Time slice expired; process B preempted with 20ms to go [Q A]
+time 180ms: Process A started using the CPU with 16ms remaining [Q B]
+time 196ms: Process A terminated [Q B]
+time 204ms: Process B started using the CPU with 20ms remaining [Q <empty>]
+time 224ms: Process B terminated [Q <empty>]
+time 228ms: Simulator ended for RR

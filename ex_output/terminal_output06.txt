@@ -143,4 +143,3 @@ time 2035ms: Process C completed I/O; added to ready queue [Q C]
 time 2038ms: Process C started using the CPU [Q <empty>]
 time 2118ms: Process C terminated [Q <empty>]
 time 2121ms: Simulator ended for RR
-

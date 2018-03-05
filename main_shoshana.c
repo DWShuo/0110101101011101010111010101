@@ -1,5 +1,3 @@
-// TO DO: make sure remaining_burst_time is updating properly
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -31,8 +29,8 @@ typedef struct {
 
 /* simulator global variables */
 int rr_add = 0;
-int t_cs = 6; // make sure this is 8 for submission
-int t_slice = 80;
+int t_cs = 8; // make sure this is 8 for submission
+int t_slice = 80; // make sure this is 80 for submission
 char msg[MAXLINE];
 
 /* stats */
@@ -90,10 +88,10 @@ int main(int argc, char **argv){
 
 	srt(processes, n, stat_string);
 	print_to_file(stat_string, argv[2]);
-	// reset_processes(processes, n);
+	reset_processes(processes, n);
 
-	// rr(processes, n, stat_string);
-	// write stat_string to file
+	rr(processes, n, stat_string);
+	print_to_file(stat_string, argv[2]);
 
 	return 0;
 }
@@ -199,6 +197,20 @@ int cmp_srt(void *_p1, void *_p2) {
 		return 1;
 }
 
+int cmp_rr_beginning(void *_p1, void *_p2) {
+	process_t *p1 = (process_t *)_p1;
+	process_t *p2 = (process_t *)_p2;
+	// compare cpu burst arrival time
+	if (p1->next_arrival_time > p2->next_arrival_time ||
+			(p1->next_arrival_time == p2->next_arrival_time && p1->id < p2->id))
+		return -1;
+	else if (p1->next_arrival_time == p2->next_arrival_time &&
+			p1->id == p2->id)
+		return 0;
+	else
+		return 1; 
+}
+
 
 /* output important events */
 void print_event(int32_t t, char *msg, heapq_t *readyq) {
@@ -229,7 +241,6 @@ void create_stats_string(char *stat_string, char *title) {
 		"-- total number of preemptions: %d\n",
 		title, (float)total_cpu_burst_time/num_bursts, (float)total_wait_time/num_bursts,
 		(float)total_turnaround_t/num_bursts, total_num_cs, total_num_preempts);
-	// printf("%s", stat_string);
 }
 
 
@@ -268,9 +279,6 @@ int add_blocked_readyq(heapq_t *readyq, heapq_t *blockedq, int32_t t, process_t 
 		int i = 0;
 		while (blockedq->length > 0 && next->next_arrival_time <= t) {
 			heap_push(readyq, heap_pop(blockedq));
-			// if preemption... should say preempt
-			// sprintf(msg, "Process %c completed I/O; added to ready queue", next->id);
-			// print_event(t, msg, readyq);
 			arrived[i] = *next;
 			next = peek(blockedq);
 			i += 1;
@@ -278,13 +286,12 @@ int add_blocked_readyq(heapq_t *readyq, heapq_t *blockedq, int32_t t, process_t 
 
 		int n = i;
 		for (i = 0; i < n; ++i) {
-			// I think the comparison isn't quite right because remaining_burst_time should be updated
+			// TO DO: isn't checking for min so could be improved
 			if (cur_proc != NULL && arrived[i].remaining_burst_time < cur_proc->remaining_burst_time) {
 				process_t *next = heap_pop(readyq); // hack-y and not good
-				// printf("%d %d\n", arrived[i].remaining_burst_time, cur_proc->remaining_burst_time);
 				sprintf(msg, "Process %c completed I/O and will preempt %c", arrived[i].id, cur_proc->id);
 				print_event(t, msg, readyq);
-				heap_push(readyq, next); // is this why it shows twice?
+				heap_push(readyq, next);
 			}
 			else {
 				sprintf(msg, "Process %c completed I/O; added to ready queue", arrived[i].id);
@@ -308,22 +315,19 @@ int add_new_readyq(heapq_t *readyq, heapq_t *futureq, int32_t t, process_t *cur_
 		int i = 0;
 		while (futureq->length > 0 && next->next_arrival_time <= t) {
 			heap_push(readyq, heap_pop(futureq));
-			// if preemption... should say preempt
-			// sprintf(msg, "Process %c arrived and added to ready queue", next->id);
-			// print_event(t, msg, readyq);
 			arrived[i] = *next;
 			next = peek(futureq);
 			i += 1;
 		}
 
 		int n = i;
+		// TO DO: isn't checking for min so could be improved
 		for (i = 0; i < n; ++i) {
-			// cur_proc->remaining_burst_time hasn't been fixed, needs to be updated
 			if (cur_proc != NULL && arrived[i].remaining_burst_time < cur_proc->remaining_burst_time) {
 				process_t *next = heap_pop(readyq); // hack-y and not good
 				sprintf(msg, "Process %c arrived and will preempt %c", arrived[i].id, cur_proc->id);
 				print_event(t, msg, readyq);
-				heap_push(readyq, next); // is this why it shows twice?
+				heap_push(readyq, next);
 			}
 			else {
 				sprintf(msg, "Process %c arrived and added to ready queue", arrived[i].id);
@@ -354,7 +358,6 @@ void update_process(process_t *cur_proc, int32_t t, heapq_t *blockedq, heapq_t *
 		print_event(t, msg, readyq);
 	}
 	else {
-		// This might still hold in SRT
 		cur_proc->next_arrival_time = t + t_cs/2 + cur_proc->io_burst_time;
 		cur_proc->cpu_bursts_remaining -= 1;
 		heap_push(blockedq, cur_proc);
@@ -461,7 +464,7 @@ void fcfs(process_t *processes, int n, char *stat_string) {
 }
 
 
-void update_process_preempt(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *readyq) {
+void update_process_srt(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *readyq) {
 	total_cpu_burst_time += cur_proc->cpu_burst_time;
 	// total_wait_time +=   // a little more complicated...
 	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
@@ -469,24 +472,21 @@ void update_process_preempt(process_t *cur_proc, int32_t t, int32_t prev_t, heap
 	num_bursts += 1;
 
 	cur_proc->next_arrival_time = t + t_cs/2 + cur_proc->io_burst_time;
-	// cur_proc->remaining_burst_time = cur_proc->remaining_burst_time - (t - prev_t);
 	heap_push(readyq, cur_proc);
 }
 
 
 // check if newly arrived process has less remaining time than current process
 // switch out current process w/ new, put current in ready queue
-// skips adding new_proc to ready queue
 void preempt_srt(int pre1, int pre2, process_t **cur_proc, int32_t t, int32_t *prev_t,
 		heapq_t *readyq, int *terminated, int *switch_out) {
 	// save remaining time of current process that is being preempted
-	// how will switch_in/switch out work? just set to switch out?
 	if (*cur_proc != NULL && ((pre1 != 0  && pre1 < (*cur_proc)->remaining_burst_time) ||
 			(pre2 != 0 && pre2 < (*cur_proc)->remaining_burst_time))) {
 
 		total_num_preempts += 1;
 
-		update_process_preempt(*cur_proc, t, *prev_t, readyq);
+		update_process_srt(*cur_proc, t, *prev_t, readyq);
 
 		*cur_proc = NULL;
 		*switch_out = 1;
@@ -503,8 +503,8 @@ void srt(process_t *processes, int n, char *stat_string) {
 	process_t *cur_proc; /* running state */
 
 	heap_init(readyq, cmp_srt);
-	heap_init(blockedq, cmp_fcfs); // not sure about this yet
-	heap_init(futureq, cmp_fcfs); // I think this should be sorted by arrival time
+	heap_init(blockedq, cmp_fcfs);
+	heap_init(futureq, cmp_fcfs);
 
 	int32_t t = 0;
 	int32_t prev_t = 0;
@@ -534,7 +534,6 @@ void srt(process_t *processes, int n, char *stat_string) {
 
 		/* check if current process exists and is finished */
 		if (cur_proc != NULL && !switch_in && !switch_out &&
-				// (cur_proc->remaining_burst_time) == t - prev_t) {
 				(cur_proc->remaining_burst_time == 0)) {
 			cur_proc->remaining_burst_time = 0;
 			update_process(cur_proc, t, blockedq, readyq, &terminated);
@@ -597,6 +596,37 @@ void srt(process_t *processes, int n, char *stat_string) {
 }
 
 
+void update_process_rr(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *readyq) {
+	total_cpu_burst_time += cur_proc->cpu_burst_time;
+	// total_wait_time +=   // a little more complicated...
+	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
+	total_num_cs += 1;
+	num_bursts += 1;
+
+	// does this apply?
+	// arrival time doesn't really matter, this just needs to go to the end of the queue...
+	// printf("time %d: id: %c  next_arrival_time: %d\n", t, cur_proc->id, cur_proc->next_arrival_time);
+	cur_proc->next_arrival_time = t;
+	// printf("time %d: id: %c  next_arrival_time: %d\n", t, cur_proc->id, cur_proc->next_arrival_time);
+	heap_push(readyq, cur_proc);
+}
+
+
+void preempt_rr(process_t **cur_proc, int32_t t, int32_t *prev_t,
+		heapq_t *readyq, int *terminated, int *switch_out) {
+
+	total_num_preempts += 1;
+
+	sprintf(msg, "Time slice expired; process %c preempted with %dms to go", (*cur_proc)->id, (*cur_proc)->remaining_burst_time);
+	print_event(t, msg, readyq);
+
+	update_process_rr(*cur_proc, t, *prev_t, readyq);
+
+	*cur_proc = NULL;
+	*switch_out = 1;
+	*prev_t = t;
+}
+
 /* Round Robin */
 void rr(process_t *processes, int n, char *stat_string) {
 	heapq_t readyq[1]; /* ready state */
@@ -605,15 +635,18 @@ void rr(process_t *processes, int n, char *stat_string) {
 	process_t *cur_proc; /* running state */
 
 	// I need to think about this...
-	heap_init(readyq, cmp_srt);
-	heap_init(blockedq, cmp_fcfs); // not sure about this yet
-	heap_init(futureq, cmp_fcfs); // I think this should be sorted by arrival time
+	if (rr_add == 0)
+		heap_init(readyq, cmp_fcfs); // this could also be cmp_rr_beginning
+	else
+		heap_init(readyq, cmp_rr_beginning);
+	heap_init(blockedq, cmp_fcfs);
+	heap_init(futureq, cmp_fcfs);
 
 	int32_t t = 0;
-	// int32_t prev_t = 0;
-	// int terminated = 0;
-	// int switch_out = 0;
-	// int switch_in = 1;
+	int32_t prev_t = 0;
+	int terminated = 0;
+	int switch_out = 0;
+	int switch_in = 1;
 
 	total_cpu_burst_time = 0; // will be divided by # of bursts
 	total_wait_time = 0; // will be divided by # of bursts
@@ -622,7 +655,7 @@ void rr(process_t *processes, int n, char *stat_string) {
 	total_num_preempts = 0;
 	num_bursts = 0;
 
-	sprintf(msg, "Starting simulation for Round Robin");
+	sprintf(msg, "Simulator started for RR");
 	print_event(t, msg, readyq);
 
 	init_readyq(processes, n, t, readyq, futureq);
@@ -632,9 +665,83 @@ void rr(process_t *processes, int n, char *stat_string) {
 		cur_proc = heap_pop(readyq);
 	}
 
+	// readyq order is actually based on when it is pushed to the back... If new process comes
+	// then it can't go ahead of processes already in line
+	while (terminated < n) {
+		/* ONE: CPU burst completion */
+
+		// case 1: time slice expires and readyq->length > 0 so cur_proc is preempted
+		// case 2: time slice expires and nothing is in readyq so cur_proc is not preempted
+		// case 3: cur_proc->remaining_burst_time = 0 so we need to bring next process into CPU
+
+		/* check if current process exists and is finished */
+		if (cur_proc != NULL && !switch_in && !switch_out) {
+			if (cur_proc->remaining_burst_time == 0) {
+				cur_proc->remaining_burst_time = 0;
+				update_process(cur_proc, t, blockedq, readyq, &terminated);
+				cur_proc->remaining_burst_time = cur_proc->cpu_burst_time;
+				cur_proc = NULL;
+				switch_out = 1;
+				prev_t = t;
+			}
+			else if (t - prev_t == t_slice) { // currently 3 more than it should be...
+				if (readyq->length > 0) {
+					preempt_rr(&cur_proc, t, &prev_t, readyq, &terminated, &switch_out);
+				}
+				else {
+					sprintf(msg, "Time slice expired; no preemption because ready queue is empty");
+					print_event(t, msg, readyq);
+					prev_t = t;
+				}
+			}
+		}
+
+		/* check if in switch out state and if finished */
+		if (switch_out && (t - prev_t == t_cs/2)) {
+			switch_out = 0;
+			prev_t = t;
+		}
+
+		/* TWO: I/O burst completion */
+
+		/* add to ready queue */
+		add_blocked_readyq(readyq, blockedq, t, NULL);
+		add_new_readyq(readyq, futureq, t, NULL);
+
+		/* THREE: process arrival */
+
+		/* start running next process in ready queue if no current process */
+		if (cur_proc == NULL && readyq->length > 0 && !switch_out && !switch_in) {
+			cur_proc = heap_pop(readyq);
+			switch_in = 1;
+			prev_t = t;
+		}
+
+		/* check if in switch in state and if finished */
+		if (switch_in && (t - prev_t == t_cs/2)) {
+			switch_in = 0;
+			prev_t = t;
+			// issue here
+			if (cur_proc->cpu_burst_time == cur_proc->remaining_burst_time)
+				sprintf(msg, "Process %c started using the CPU", cur_proc->id);
+			else
+				sprintf(msg, "Process %c started using the CPU with %dms remaining", cur_proc->id, cur_proc->remaining_burst_time);
+			print_event(t, msg, readyq);
+
+		}
+
+		if (cur_proc != NULL && !switch_in) {
+			cur_proc->remaining_burst_time -= 1;
+		}
+
+		t += 1;
+	}
+
+	t += (t_cs/2 - 1); // makes up for not finishing last switch out
+
 	printf("time %dms: Simulator ended for RR\n", t);
 
-	// create_stats_string(stat_string, "Algorithm RR");
+	create_stats_string(stat_string, "Algorithm RR");
 }
 
 

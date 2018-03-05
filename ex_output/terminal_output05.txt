@@ -380,4 +380,3 @@ time 11063ms: Time slice expired; no preemption because ready queue is empty [Q 
 time 11157ms: Time slice expired; no preemption because ready queue is empty [Q <empty>]
 time 11251ms: Process V terminated [Q <empty>]
 time 11254ms: Simulator ended for RR
-
