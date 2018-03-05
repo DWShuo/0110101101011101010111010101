@@ -1,3 +1,5 @@
+// TO DO: make sure remaining_burst_time is updating properly
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -29,7 +31,7 @@ typedef struct {
 
 /* simulator global variables */
 int rr_add = 0;
-int t_cs = 6; // make sure this is 8
+int t_cs = 6; // make sure this is 8 for submission
 int t_slice = 80;
 char msg[MAXLINE];
 
@@ -45,12 +47,13 @@ int cmp_fcfs(void *_p1, void *_p2);
 int cmp_srt(void *_p1, void *_p2);
 void parseline( char* buffer, int size, process_t *processes, int *n);
 process_t *parse(char *filename, process_t *processes, int *n);
-void preempt_srt(int pre1, int pre2, process_t *cur_proc, int32_t t, int32_t *prev_t,
-		heapq_t *readyq, heapq_t *blockedq, int *terminated, int *switch_out);
-void fcfs(process_t *process_t, int n);
-void srt(process_t *processes, int n);
-void rr(process_t *processes, int n);
-void print_to_file();
+void preempt_srt(int pre1, int pre2, process_t **cur_proc, int32_t t, int32_t *prev_t,
+		heapq_t *readyq, int *terminated, int *switch_out);
+void fcfs(process_t *process_t, int n, char *stat_string);
+void srt(process_t *processes, int n, char *stat_string);
+void rr(process_t *processes, int n, char *stat_string);
+void clear_file(char *output_name);
+void print_to_file(char *stat_string, char *output_name);
 void reset_processes(process_t *processes, int n);
 
 
@@ -58,6 +61,7 @@ int main(int argc, char **argv){
 
 	process_t processes[MAXSIZE]; /* Array of all processes */
 	int n = 0; /* number of processes to simulate */
+	char stat_string[300]; /* string to hold CPU stats */
 
     if (argc != 3 && argc != 4) {
     	fprintf(stderr, "ERROR: Invalid arguments\n");
@@ -78,15 +82,18 @@ int main(int argc, char **argv){
 
 	parse(argv[1], processes, &n); /* store processes from file in array */
 
-	fcfs(processes, n);
+	clear_file(argv[2]);
+
+	fcfs(processes, n, stat_string);
+	print_to_file(stat_string, argv[2]);
 	reset_processes(processes, n);
 
-	srt(processes, n);
+	srt(processes, n, stat_string);
+	print_to_file(stat_string, argv[2]);
 	// reset_processes(processes, n);
 
-	// rr(processes, n);
-
-	print_to_file();
+	// rr(processes, n, stat_string);
+	// write stat_string to file
 
 	return 0;
 }
@@ -213,8 +220,7 @@ void print_event(int32_t t, char *msg, heapq_t *readyq) {
 }
 
 
-void create_stats_string(char *title) {
-	char stat_string[300];
+void create_stats_string(char *stat_string, char *title) {
 	sprintf(stat_string, "%s\n"
 		"-- average CPU burst time: %.2f ms\n"
 		"-- average wait time: %.2f ms\n"
@@ -223,7 +229,7 @@ void create_stats_string(char *title) {
 		"-- total number of preemptions: %d\n",
 		title, (float)total_cpu_burst_time/num_bursts, (float)total_wait_time/num_bursts,
 		(float)total_turnaround_t/num_bursts, total_num_cs, total_num_preempts);
-	printf("%s", stat_string);
+	// printf("%s", stat_string);
 }
 
 
@@ -255,39 +261,79 @@ void init_readyq(process_t *processes, int n, int32_t t, heapq_t *readyq, heapq_
 
 // should I be combining this with add_blocked_readyq? Only difference is message
 /* add processes finished with I/O */
-int add_blocked_readyq(heapq_t *readyq, heapq_t *blockedq, int32_t t) {
+int add_blocked_readyq(heapq_t *readyq, heapq_t *blockedq, int32_t t, process_t *cur_proc) {
 	if (blockedq->length > 0) {
+		process_t arrived[MAXSIZE];
 		process_t *next = peek(blockedq);
+		int i = 0;
 		while (blockedq->length > 0 && next->next_arrival_time <= t) {
 			heap_push(readyq, heap_pop(blockedq));
-			sprintf(msg, "Process %c completed I/O; added to ready queue", next->id);
-			print_event(t, msg, readyq);
+			// if preemption... should say preempt
+			// sprintf(msg, "Process %c completed I/O; added to ready queue", next->id);
+			// print_event(t, msg, readyq);
+			arrived[i] = *next;
 			next = peek(blockedq);
+			i += 1;
+		}
+
+		int n = i;
+		for (i = 0; i < n; ++i) {
+			// I think the comparison isn't quite right because remaining_burst_time should be updated
+			if (cur_proc != NULL && arrived[i].remaining_burst_time < cur_proc->remaining_burst_time) {
+				process_t *next = heap_pop(readyq); // hack-y and not good
+				// printf("%d %d\n", arrived[i].remaining_burst_time, cur_proc->remaining_burst_time);
+				sprintf(msg, "Process %c completed I/O and will preempt %c", arrived[i].id, cur_proc->id);
+				print_event(t, msg, readyq);
+				heap_push(readyq, next); // is this why it shows twice?
+			}
+			else {
+				sprintf(msg, "Process %c completed I/O; added to ready queue", arrived[i].id);
+				print_event(t, msg, readyq);
+			}
 		}
 	}
 	if (readyq->length > 0) {
 		process_t *next = peek(readyq);
-		return next->cpu_burst_time;
+		return next->remaining_burst_time;
 	} else {
 		return 0;
 	}
 }
 
 /* add new arrivals */
-int add_new_readyq(heapq_t *readyq, heapq_t *futureq, int32_t t) {
+int add_new_readyq(heapq_t *readyq, heapq_t *futureq, int32_t t, process_t *cur_proc) {
 	if (futureq->length > 0) {
+		process_t arrived[MAXSIZE];
 		process_t *next = peek(futureq);
+		int i = 0;
 		while (futureq->length > 0 && next->next_arrival_time <= t) {
 			heap_push(readyq, heap_pop(futureq));
 			// if preemption... should say preempt
-			sprintf(msg, "Process %c arrived and added to ready queue", next->id);
-			print_event(t, msg, readyq);
+			// sprintf(msg, "Process %c arrived and added to ready queue", next->id);
+			// print_event(t, msg, readyq);
+			arrived[i] = *next;
 			next = peek(futureq);
+			i += 1;
+		}
+
+		int n = i;
+		for (i = 0; i < n; ++i) {
+			// cur_proc->remaining_burst_time hasn't been fixed, needs to be updated
+			if (cur_proc != NULL && arrived[i].remaining_burst_time < cur_proc->remaining_burst_time) {
+				process_t *next = heap_pop(readyq); // hack-y and not good
+				sprintf(msg, "Process %c arrived and will preempt %c", arrived[i].id, cur_proc->id);
+				print_event(t, msg, readyq);
+				heap_push(readyq, next); // is this why it shows twice?
+			}
+			else {
+				sprintf(msg, "Process %c arrived and added to ready queue", arrived[i].id);
+				print_event(t, msg, readyq);
+			}
 		}
 	}
 	if (readyq->length > 0) {
 		process_t *next = peek(readyq);
-		return next->cpu_burst_time;
+		return next->remaining_burst_time;
 	} else {
 		return 0;
 	}
@@ -301,7 +347,8 @@ void update_process(process_t *cur_proc, int32_t t, heapq_t *blockedq, heapq_t *
 	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
 	total_num_cs += 1;
 	num_bursts += 1;
-	if (cur_proc->cpu_bursts_remaining == 1) {
+	
+	if (cur_proc->cpu_bursts_remaining == 1) { // issue w/ SRT when preempted during last process and then comes back into cpu
 		*terminated += 1;
 		sprintf(msg, "Process %c terminated", cur_proc->id);
 		print_event(t, msg, readyq);
@@ -323,7 +370,7 @@ void update_process(process_t *cur_proc, int32_t t, heapq_t *blockedq, heapq_t *
 
 
 /* First Come First Serve */
-void fcfs(process_t *processes, int n) {
+void fcfs(process_t *processes, int n, char *stat_string) {
 	heapq_t readyq[1]; /* ready state */
 	heapq_t futureq[1]; /* not yet arrived */
 	heapq_t blockedq[1]; /* blocked state */
@@ -382,8 +429,8 @@ void fcfs(process_t *processes, int n) {
 		/* TWO: I/O burst completion */
 
 		/* add to ready queue */
-		add_blocked_readyq(readyq, blockedq, t);
-		add_new_readyq(readyq, futureq, t);
+		add_blocked_readyq(readyq, blockedq, t, NULL);
+		add_new_readyq(readyq, futureq, t, NULL);
 
 		/* THREE: process arrival */
 
@@ -410,32 +457,38 @@ void fcfs(process_t *processes, int n) {
 
 	printf("time %dms: Simulator ended for FCFS\n", t);
 
-	create_stats_string("Algorithm FCFS");
+	create_stats_string(stat_string, "Algorithm FCFS");
+}
+
+
+void update_process_preempt(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *readyq) {
+	total_cpu_burst_time += cur_proc->cpu_burst_time;
+	// total_wait_time +=   // a little more complicated...
+	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
+	total_num_cs += 1;
+	num_bursts += 1;
+
+	cur_proc->next_arrival_time = t + t_cs/2 + cur_proc->io_burst_time;
+	// cur_proc->remaining_burst_time = cur_proc->remaining_burst_time - (t - prev_t);
+	heap_push(readyq, cur_proc);
 }
 
 
 // check if newly arrived process has less remaining time than current process
 // switch out current process w/ new, put current in ready queue
 // skips adding new_proc to ready queue
-void preempt_srt(int pre1, int pre2, process_t *cur_proc, int32_t t, int32_t *prev_t,
-		heapq_t *readyq, heapq_t *blockedq, int *terminated, int *switch_out) {
+void preempt_srt(int pre1, int pre2, process_t **cur_proc, int32_t t, int32_t *prev_t,
+		heapq_t *readyq, int *terminated, int *switch_out) {
 	// save remaining time of current process that is being preempted
 	// how will switch_in/switch out work? just set to switch out?
-	total_num_preempts += 1;
-	if (cur_proc != NULL && pre1 != 0 && pre2 != 0
-		&& pre1 < cur_proc->remaining_burst_time
-			&& pre2 < cur_proc->remaining_burst_time) {
+	if (*cur_proc != NULL && ((pre1 != 0  && pre1 < (*cur_proc)->remaining_burst_time) ||
+			(pre2 != 0 && pre2 < (*cur_proc)->remaining_burst_time))) {
 
-		process_t *next = peek(readyq);
-		sprintf(msg, "Process %c arrived and will preempt %c", next->id, cur_proc->id);
-		print_event(t, msg, readyq);
+		total_num_preempts += 1;
 
-		heap_push(readyq, cur_proc);
+		update_process_preempt(*cur_proc, t, *prev_t, readyq);
 
-		cur_proc->remaining_burst_time = t - *prev_t;
-		update_process(cur_proc, t, blockedq, readyq, terminated);
-
-		cur_proc = NULL;
+		*cur_proc = NULL;
 		*switch_out = 1;
 		*prev_t = t;
 	}
@@ -443,7 +496,7 @@ void preempt_srt(int pre1, int pre2, process_t *cur_proc, int32_t t, int32_t *pr
 
 
 /* Shortest Remaining Time */
-void srt(process_t *processes, int n) {
+void srt(process_t *processes, int n, char *stat_string) {
 	heapq_t readyq[1]; /* ready state */
 	heapq_t futureq[1]; /* not yet arrived */
 	heapq_t blockedq[1]; /* blocked state */
@@ -480,18 +533,19 @@ void srt(process_t *processes, int n) {
 		/* ONE: CPU burst completion */
 
 		/* check if current process exists and is finished */
-		// also need to update remaining time to cpu_burst_time
 		if (cur_proc != NULL && !switch_in && !switch_out &&
-				(cur_proc->cpu_burst_time) == t - prev_t) {
-			cur_proc->remaining_burst_time = cur_proc->cpu_burst_time;
+				// (cur_proc->remaining_burst_time) == t - prev_t) {
+				(cur_proc->remaining_burst_time == 0)) {
+			cur_proc->remaining_burst_time = 0;
 			update_process(cur_proc, t, blockedq, readyq, &terminated);
+			cur_proc->remaining_burst_time = cur_proc->cpu_burst_time;
 			cur_proc = NULL;
 			switch_out = 1;
 			prev_t = t;
 		}
 
 		/* check if in switch out state and if finished */
-		if (switch_out && (t - prev_t == t_cs/2)) { // when >= it terminates, may need to change order
+		if (switch_out && (t - prev_t == t_cs/2)) {
 			switch_out = 0;
 			prev_t = t;
 		}
@@ -500,19 +554,16 @@ void srt(process_t *processes, int n) {
 
 		/* add to ready queue */
 		// preemption should be checked in these functions
-		// maybe return updated shortest running time, 0 if nothing
-		// there's something going wrong w/ cur_proc... is it currently null?
-		int preempt1 = add_blocked_readyq(readyq, blockedq, t);
-		int preempt2 = add_new_readyq(readyq, futureq, t);
-		// I think I need to make sure it is checking new bursts,
-		// not unfinished bursts. Or do I?
-		preempt_srt(preempt1, preempt2, cur_proc, t, &prev_t, readyq, blockedq,
+		int preempt1 = add_blocked_readyq(readyq, blockedq, t, cur_proc);
+		int preempt2 = add_new_readyq(readyq, futureq, t, cur_proc);
+		// issue is that next switch_out happens on next iteration of loop ???
+		preempt_srt(preempt1, preempt2, &cur_proc, t, &prev_t, readyq,
 			&terminated, &switch_out);
 
 		/* THREE: process arrival */
 
 		/* start running next process in ready queue if no current process */
-		if (readyq->length > 0 && cur_proc == NULL && !switch_out && !switch_in) {
+		if (cur_proc == NULL && readyq->length > 0 && !switch_out && !switch_in) {
 			cur_proc = heap_pop(readyq);
 			switch_in = 1;
 			prev_t = t;
@@ -522,26 +573,41 @@ void srt(process_t *processes, int n) {
 		if (switch_in && (t - prev_t == t_cs/2)) {
 			switch_in = 0;
 			prev_t = t;
-			sprintf(msg, "Process %c started using the CPU", cur_proc->id);
+			// issue here
+			if (cur_proc->cpu_burst_time == cur_proc->remaining_burst_time)
+				sprintf(msg, "Process %c started using the CPU", cur_proc->id);
+			else
+				sprintf(msg, "Process %c started using the CPU with %dms remaining", cur_proc->id, cur_proc->remaining_burst_time);
 			print_event(t, msg, readyq);
 
+		}
+
+		if (cur_proc != NULL && !switch_in) {
+			cur_proc->remaining_burst_time -= 1;
 		}
 
 		t += 1;
 	}
 
+	t += (t_cs/2 - 1); // makes up for not finishing last switch out
+
 	printf("time %dms: Simulator ended for SRT\n", t);
 
-	// create_stats_string("Algorithm SRT");
+	create_stats_string(stat_string, "Algorithm SRT");
 }
 
 
 /* Round Robin */
-void rr(process_t *processes, int n) {
+void rr(process_t *processes, int n, char *stat_string) {
 	heapq_t readyq[1]; /* ready state */
 	heapq_t futureq[1]; /* not yet arrived */
 	heapq_t blockedq[1]; /* blocked state */
 	process_t *cur_proc; /* running state */
+
+	// I need to think about this...
+	heap_init(readyq, cmp_srt);
+	heap_init(blockedq, cmp_fcfs); // not sure about this yet
+	heap_init(futureq, cmp_fcfs); // I think this should be sorted by arrival time
 
 	int32_t t = 0;
 	// int32_t prev_t = 0;
@@ -568,28 +634,27 @@ void rr(process_t *processes, int n) {
 
 	printf("time %dms: Simulator ended for RR\n", t);
 
-	// create_stats_string("Algorithm RR");
-}
-
-void avg_wait_time(process_t processes) {
-
-}
-
-void avg_turnaround(process_t processes) {
-
+	// create_stats_string(stat_string, "Algorithm RR");
 }
 
 
-/* print stats to output file */
-void print_to_file() {
-	FILE *file = fopen("output.txt", "w");
+void clear_file(char *output_name) {
+	FILE *file = fopen(output_name, "w"); /* clear output file */
 	if (file == NULL) {
 		fprintf(stderr, "ERROR: fopen failed\n");
 		exit(EXIT_FAILURE);
 	}
-	fprintf(file, "Algorithm FCFS\n");
-	fprintf(file, "Algorithm SRT\n");
-	fprintf(file, "Algorithm RR\n");
+	fclose(file);
+}
+
+/* print stats to output file */
+void print_to_file(char *stat_string, char *output_name) {
+	FILE *file = fopen(output_name, "a");
+	if (file == NULL) {
+		fprintf(stderr, "ERROR: fopen failed\n");
+		exit(EXIT_FAILURE);
+	}
+	fprintf(file, "%s\n", stat_string);
 
 	fclose(file);
 }
