@@ -107,31 +107,6 @@ int cmp_event_time(void *_e1, void *_e2) {
 		return 1;
 }
 
-//goes
-//here
-
-
-// // comparison functions for the priority queue order
-// int cmp_event_time(void *_e1, void *_e2) {
-// 	event_t *e1 = (event_t *)_e1;
-// 	event_t *e2 = (event_t *)_e2;
-// 	// sort by time, type, process name
-	
-// }
-// int cmp_enqueue_time(void *_p1, void *_p2) {
-// 	process_t *p1 = (process_t *)_p1;
-// 	process_t *p2 = (process_t *)_p2;
-// 	// sort by time, process name
-	
-// }
-// int cmp_remaining_burst_time(void *_p1, void *_p2) {
-// 	process_t *p1 = (process_t *)_p1;
-// 	process_t *p2 = (process_t *)_p2;
-// 	// sort by time, process name
-	
-// }
-//COMPARE FUNCTION
-
 //NOTE: HEAP HELPER FUNCTIONS
 //EVENT HELPERS
 event_t *create_event(event_type type, int32_t time, process_t *proc) {
@@ -190,7 +165,6 @@ void add_to_readyq(process_t *proc, char *reason) {//printing
 	dump_readyq();
 }
 
-//TODO: check logic on preempt implementation 
 int preempt(process_t *proc, scheduler_t scheduler, char *reason) {
 	if (current_process == NULL) {
 		return 0;
