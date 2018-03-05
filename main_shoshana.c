@@ -23,7 +23,7 @@ typedef struct {
 	int32_t next_arrival_time;
 	int32_t cpu_bursts_remaining;
 	// for SRT/RR
-	int32_t start_time;  // latest time the process entered the running state
+	int32_t exit_time;  // last time the process left the CPU
 	int32_t remaining_burst_time;
 } process_t;
 
@@ -347,12 +347,12 @@ int add_new_readyq(heapq_t *readyq, heapq_t *futureq, int32_t t, process_t *cur_
 /* update process that finished running so that you know when to run it next */
 void update_process(process_t *cur_proc, int32_t t, heapq_t *blockedq, heapq_t *readyq, int *terminated) {
 	total_cpu_burst_time += cur_proc->cpu_burst_time;
-	// total_wait_time +=   // a little more complicated...
+	total_wait_time += (t - cur_proc->next_arrival_time - cur_proc->cpu_burst_time - t_cs/2);    // a little more complicated...
 	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
 	total_num_cs += 1;
 	num_bursts += 1;
 	
-	if (cur_proc->cpu_bursts_remaining == 1) { // issue w/ SRT when preempted during last process and then comes back into cpu
+	if (cur_proc->cpu_bursts_remaining == 1) {
 		*terminated += 1;
 		sprintf(msg, "Process %c terminated", cur_proc->id);
 		print_event(t, msg, readyq);
@@ -467,9 +467,8 @@ void fcfs(process_t *processes, int n, char *stat_string) {
 void update_process_srt(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *readyq) {
 	total_cpu_burst_time += cur_proc->cpu_burst_time;
 	// total_wait_time +=   // a little more complicated...
-	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
+	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2); // forgetting wait time...
 	total_num_cs += 1;
-	num_bursts += 1;
 
 	cur_proc->next_arrival_time = t + t_cs/2 + cur_proc->io_burst_time;
 	heap_push(readyq, cur_proc);
@@ -601,7 +600,6 @@ void update_process_rr(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *
 	// total_wait_time +=   // a little more complicated...
 	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
 	total_num_cs += 1;
-	num_bursts += 1;
 
 	// does this apply?
 	// arrival time doesn't really matter, this just needs to go to the end of the queue...
@@ -761,7 +759,7 @@ void print_to_file(char *stat_string, char *output_name) {
 		fprintf(stderr, "ERROR: fopen failed\n");
 		exit(EXIT_FAILURE);
 	}
-	fprintf(file, "%s\n", stat_string);
+	fprintf(file, "%s", stat_string);
 
 	fclose(file);
 }
