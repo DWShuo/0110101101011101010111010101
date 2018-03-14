@@ -1,0 +1,9 @@
+# p1-input04.txt
+#
+# <proc-id>|<initial-arrival-time>|<cpu-burst-time>|<num-bursts>|<io-time>
+A|0|100|4|200
+B|0|101|4|200
+C|0|102|4|200
+X|0|103|4|200
+Y|0|104|4|200
+Z|0|105|4|200

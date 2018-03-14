@@ -1,0 +1,14 @@
+# p1-input06.txt
+#
+# <proc-id>|<initial-arrival-time>|<cpu-burst-time>|<num-bursts>|<io-time>
+A|0|20|5|40
+B|20|36|2|100
+C|68|30|1|0
+
+#
+#   A arrives at time 0; A starts using CPU at time 4 ms; A stops using CPU at time 24 ms;
+#   A goes to do I/O at time 28 ms; A will return to ready queue at time 68 ms;
+#
+#   B arrives at time 20 ms; B starts using CPU at time 32 ms; B stops using CPU at time 68 ms;
+#
+#   C arrives at time 68 ms;
