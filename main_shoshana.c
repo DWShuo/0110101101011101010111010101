@@ -135,7 +135,7 @@ void parseline(char* buffer, int size, process_t *processes, int *n) {
 		i++;
 	}
 
-	proc.start_time = 0;
+	proc.start_time = proc.init_arrival_time; // this may need to be init_arrival_time of process...
 	processes[*n] = proc;
 	*n += 1;
 
@@ -252,8 +252,7 @@ void reset_processes(process_t *processes, int n) {
 	for (int i = 0; i < n; ++i) {
 		processes[i].next_arrival_time = processes[i].init_arrival_time;
 		processes[i].cpu_bursts_remaining = processes[i].cpu_burst_count;
-		// start time?
-		// remaining burst time... not sure if I take care of this somewhere else
+		processes[i].start_time = processes[i].init_arrival_time;
 		processes[i].remaining_burst_time = processes[i].cpu_burst_time;
 	}
 	printf("\n");
@@ -352,7 +351,9 @@ int add_new_readyq(heapq_t *readyq, heapq_t *futureq, int32_t t, process_t *cur_
 void update_process(process_t *cur_proc, int32_t t, heapq_t *blockedq, heapq_t *readyq, int *terminated) {
 	// I can probably use next_arrival_time - the typical time they have to wait to get ending time
 	// total_cpu_burst_time += (t - cur_proc->start_time - t_cs/2);
-	total_wait_time += (t - cur_proc->next_arrival_time - cur_proc->cpu_burst_time - t_cs/2);    // a little more complicated...
+	// total_wait_time += (t - cur_proc->next_arrival_time - cur_proc->cpu_burst_time - t_cs/2);    // a little more complicated...
+	// total_wait_time += (t - cur_proc->next_arrival_time - cur_proc->start_time);
+	total_wait_time += (cur_proc->start_time - cur_proc->next_arrival_time);
 	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
 	total_num_cs += 1;
 	
@@ -468,12 +469,10 @@ void fcfs(process_t *processes, int n, char *stat_string) {
 
 
 void update_process_srt(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *readyq) {
-	// total_wait_time +=   // a little more complicated...
-	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2); // forgetting wait time...
+	total_wait_time += (cur_proc->start_time - cur_proc->next_arrival_time - t_cs/2);
+	total_turnaround_t += (t - cur_proc->next_arrival_time + t_cs/2);
 	total_num_cs += 1;
 
-	// ... why am I adding io_burst_time? shouldn't it be directly added to the ready queue?
-	// cur_proc->next_arrival_time = t + t_cs/2 + cur_proc->io_burst_time;
 	cur_proc->next_arrival_time = t + t_cs/2;
 	heap_push(readyq, cur_proc);
 }
@@ -602,6 +601,7 @@ void update_process_rr(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *
 	// total_wait_time +=   // a little more complicated...
 	// for some reason getting rid of +t_cs/2 fixed average turnaround time
 	// probably because I didn't include t_cs/2 in next_arrival time
+	total_wait_time += (cur_proc->start_time - cur_proc->next_arrival_time - t_cs/2);
 	total_turnaround_t += (t - cur_proc->next_arrival_time);
 	total_num_cs += 1;
 
