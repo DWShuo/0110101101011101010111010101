@@ -1,8 +1,8 @@
 make clean
 make
-for n in 01 02 03
+for n in 00 01 02 03 04 05 06
 do
-	./main ./ex_output/input$n.txt ./program_output/out2.txt > ./program_output/out1.txt
-	diff --strip-trailing-cr -u ./ex_output/terminal_output$n.txt ./program_output/out1.txt
-	diff --strip-trailing-cr -u ./ex_output/statout$n.txt ./program_output/out2.txt
+	./main ./ex_output/p1-input$n.txt ./program_output/simout$n.txt > ./program_output/output$n.txt
+	diff --strip-trailing-cr -u ./ex_output/p1-output$n.txt ./program_output/output$n.txt
+	diff --strip-trailing-cr -u ./ex_output/p1-simout$n.txt ./program_output/simout$n.txt
 done	

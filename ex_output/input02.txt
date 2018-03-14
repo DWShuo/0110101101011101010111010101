@@ -1,4 +1,0 @@
-# p1-input02.txt
-#
-# <proc-id>|<initial-arrival-time>|<cpu-burst-time>|<num-bursts>|<io-time>
-X|0|100|5|500
