@@ -1,3 +1,12 @@
+// TO DO: The problem is in RR when a process finishes I/O at the same time that another
+// 		  process is preempted.
+//		  When a process is preempted, it should be added to the ready queue after the
+//		  the process that finished I/O.
+//		  So I've fixed the output but I think update_process could produce wrong output
+//		  because I'm pushing to blocked queue early... maybe not though because I'm
+//		  accounting for that in next_arrival_time
+//		  there could be an issue with preempt_srt though
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -555,7 +564,6 @@ void srt(process_t *processes, int n, char *stat_string) {
 		// preemption should be checked in these functions
 		int preempt1 = add_blocked_readyq(readyq, blockedq, t, cur_proc);
 		int preempt2 = add_new_readyq(readyq, futureq, t, cur_proc);
-		// issue is that next switch_out happens on next iteration of loop ???
 		preempt_srt(preempt1, preempt2, &cur_proc, t, &prev_t, readyq,
 			&terminated, &switch_out);
 
@@ -598,19 +606,15 @@ void srt(process_t *processes, int n, char *stat_string) {
 
 
 void update_process_rr(process_t *cur_proc, int32_t t, int32_t prev_t, heapq_t *readyq) {
-	// total_wait_time +=   // a little more complicated...
 	// for some reason getting rid of +t_cs/2 fixed average turnaround time
 	// probably because I didn't include t_cs/2 in next_arrival time
-	total_wait_time += (cur_proc->start_time - cur_proc->next_arrival_time - t_cs/2);
-	total_turnaround_t += (t - cur_proc->next_arrival_time);
+	total_wait_time += (cur_proc->start_time - cur_proc->next_arrival_time);
+	total_turnaround_t += (t + t_cs/2 - cur_proc->next_arrival_time);
 	total_num_cs += 1;
 
-	// arrival time doesn't really matter, this just needs to go to the end of the queue...
-	// should I be adding t_cs/2? It technically isn't finished until after switch_out
-	// This could matter if something comes during context switch...
-	// should current process still have priority?
-	cur_proc->next_arrival_time = t;
-	heap_push(readyq, cur_proc);
+	cur_proc->next_arrival_time = t + t_cs/2;
+	// problem here! process shouldn't be added to ready queue until switch out is done
+	// heap_push(readyq, cur_proc);
 }
 
 
@@ -624,7 +628,7 @@ void preempt_rr(process_t **cur_proc, int32_t t, int32_t *prev_t,
 
 	update_process_rr(*cur_proc, t, *prev_t, readyq);
 
-	*cur_proc = NULL;
+	// *cur_proc = NULL;
 	*switch_out = 1;
 	*prev_t = t;
 }
@@ -649,6 +653,7 @@ void rr(process_t *processes, int n, char *stat_string) {
 	int terminated = 0;
 	int switch_out = 0;
 	int switch_in = 1;
+	int preempted = 0;
 
 	total_wait_time = 0; // will be divided by # of bursts
 	total_turnaround_t = 0; // will be divided by # of bursts
@@ -680,13 +685,14 @@ void rr(process_t *processes, int n, char *stat_string) {
 				cur_proc->remaining_burst_time = 0;
 				update_process(cur_proc, t, blockedq, readyq, &terminated);
 				cur_proc->remaining_burst_time = cur_proc->cpu_burst_time;
-				cur_proc = NULL;
+				// cur_proc = NULL;
 				switch_out = 1;
 				prev_t = t;
 			}
 			else if (t - prev_t == t_slice) { // currently 3 more than it should be...
 				if (readyq->length > 0) {
 					preempt_rr(&cur_proc, t, &prev_t, readyq, &terminated, &switch_out);
+					preempted = 1;
 				}
 				else {
 					sprintf(msg, "Time slice expired; no preemption because ready queue is empty");
@@ -696,8 +702,16 @@ void rr(process_t *processes, int n, char *stat_string) {
 			}
 		}
 
+		// somehow I'm getting the processes that should be going to I/O
 		/* check if in switch out state and if finished */
 		if (switch_out && (t - prev_t == t_cs/2)) {
+			//
+			if (preempted) { // time slice expired
+				heap_push(readyq, cur_proc);
+				preempted = 0;
+			}
+			cur_proc = NULL;
+			//
 			switch_out = 0;
 			prev_t = t;
 		}
@@ -731,9 +745,8 @@ void rr(process_t *processes, int n, char *stat_string) {
 
 		}
 
-		if (cur_proc != NULL && !switch_in) {
+		if (cur_proc != NULL && !switch_in && !switch_out)
 			cur_proc->remaining_burst_time -= 1;
-		}
 
 		t += 1;
 	}
