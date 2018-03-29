@@ -1,3 +1,5 @@
+/* TEAM: Shoshana Malfatto, David Wang, Sam Ingram */
+
 #include <stdlib.h>
 #include <assert.h>
 #include "heapq.h"

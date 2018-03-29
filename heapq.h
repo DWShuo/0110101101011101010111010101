@@ -1,3 +1,5 @@
+/* TEAM: Shoshana Malfatto, David Wang, Sam Ingram */
+
 #ifndef HEAPQ_H
 #define HEAPQ_H
 
