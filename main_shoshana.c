@@ -7,9 +7,6 @@
 //		  accounting for that in next_arrival_time
 //		  there could be an issue with preempt_srt though
 
-// 		  the only thing that is giving me wrong output is stats output for tests 1 and 4
-//		  my average for turnaround and wait time are higher than they should be
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -214,18 +211,42 @@ int cmp_srt(void *_p1, void *_p2) {
 		return 1;
 }
 
+/* compare processes based on arrival time, more recent arrival time gets priority */
 int cmp_rr_beginning(void *_p1, void *_p2) {
 	process_t *p1 = (process_t *)_p1;
 	process_t *p2 = (process_t *)_p2;
 	// compare cpu burst arrival time
-	if (p1->next_arrival_time > p2->next_arrival_time ||
-			(p1->next_arrival_time == p2->next_arrival_time && p1->id < p2->id))
+
+	// compare like fcfs
+	if (p1->remaining_burst_time != p1->cpu_burst_time && p2->remaining_burst_time != p2->cpu_burst_time) {
+		// compared like normal fcfs
+		if (p1->next_arrival_time < p2->next_arrival_time ||
+				(p1->next_arrival_time == p2->next_arrival_time && p1->id < p2->id))
+			return -1;
+		else if (p1->next_arrival_time == p2->next_arrival_time &&
+				p1->id == p2->id)
+			return 0;
+		else
+			return 1;
+	}
+	else if (p1->remaining_burst_time != p1->cpu_burst_time) {
+		// p1 added to end, p2 moved up
+		return 1;
+	}
+	else if (p2->remaining_burst_time != p2->cpu_burst_time) {
+		// p2 added to end, p1 moved up
 		return -1;
-	else if (p1->next_arrival_time == p2->next_arrival_time &&
-			p1->id == p2->id)
-		return 0;
-	else
-		return 1; 
+	}
+	else { // both are equal and newly added, normal
+		if (p1->next_arrival_time > p2->next_arrival_time ||
+			(p1->next_arrival_time == p2->next_arrival_time && p1->id > p2->id))
+			return -1;
+		else if (p1->next_arrival_time == p2->next_arrival_time &&
+				p1->id == p2->id)
+			return 0;
+		else
+			return 1;
+	}
 }
 
 
@@ -416,7 +437,7 @@ void fcfs(process_t *processes, int n, char *stat_string) {
 	print_event(t, msg, readyq);
 
 	init_readyq(processes, n, t, readyq, futureq);
-	assert(readyq->length > 0);
+	// assert(readyq->length > 0);
 
 	if (readyq->length > 0)
 		cur_proc = heap_pop(readyq);
@@ -535,7 +556,7 @@ void srt(process_t *processes, int n, char *stat_string) {
 	print_event(t, msg, readyq);
 
 	init_readyq(processes, n, t, readyq, futureq);
-	assert(readyq->length > 0);
+	// assert(readyq->length > 0); // I should try removing this
 
 	if (readyq->length > 0)
 		cur_proc = heap_pop(readyq);
@@ -615,7 +636,7 @@ void update_process_rr(process_t *cur_proc, int32_t t, heapq_t *readyq) {
 	total_num_preempts += 1;
 
 	// time when switch out finishes, added to ready queue again
-	cur_proc->next_arrival_time = t + t_cs/2;
+	cur_proc->next_arrival_time = t + t_cs/2; // problem is here for beginning...
 }
 
 
@@ -627,6 +648,7 @@ void preempt_rr(process_t **cur_proc, int32_t t, heapq_t *readyq) {
 	update_process_rr(*cur_proc, t, readyq);
 }
 
+
 /* Round Robin */
 void rr(process_t *processes, int n, char *stat_string) {
 	heapq_t readyq[1]; /* ready state */
@@ -634,7 +656,6 @@ void rr(process_t *processes, int n, char *stat_string) {
 	heapq_t blockedq[1]; /* blocked state */
 	process_t *cur_proc; /* running state */
 
-	// I need to think about this...
 	if (rr_add == 0)
 		heap_init(readyq, cmp_fcfs); // this could also be cmp_rr_beginning
 	else
@@ -658,7 +679,7 @@ void rr(process_t *processes, int n, char *stat_string) {
 	print_event(t, msg, readyq);
 
 	init_readyq(processes, n, t, readyq, futureq);
-	assert(readyq->length > 0);
+	// assert(readyq->length > 0);
 
 	if (readyq->length > 0)
 		cur_proc = heap_pop(readyq);
@@ -680,6 +701,7 @@ void rr(process_t *processes, int n, char *stat_string) {
 			}
 			else if (t - prev_t == t_slice) {
 				if (readyq->length > 0) {
+					// issue here when beginning is set
 					preempt_rr(&cur_proc, t, readyq);
 					preempt = 1;
 
